@@ -40,16 +40,51 @@ def build_candidate_memory_graph(rc: models.RoleCandidate) -> dict[str, Any]:
     ]
     completed_calls.sort(key=lambda c: c.created_at or "")
 
+    # For voice agent briefing injection: ONLY include calls from PRIOR stages/rounds.
+    # When a candidate is in Round 1, prior_stage_calls is empty (retries run afresh without memory).
+    # When advanced to Round 2, Round 1 calls become prior_stage_calls (memory is transferred).
+    current_round_num = (
+        rc.current_stage.round_number
+        if rc and rc.current_stage and rc.current_stage.round_number
+        else 1
+    )
+    prior_stage_calls = [
+        c for c in completed_calls
+        if c.stage and c.stage.round_number and c.stage.round_number < current_round_num
+    ]
+
     verified_facts: dict[str, Any] = {}
     skills_by_name: dict[str, dict[str, Any]] = {}
     rounds_history: list[dict[str, Any]] = []
 
+    # 1. UI history timeline from all completed calls
     for call in completed_calls:
         sc = call.screening
         stage_name = call.stage.name if call.stage else f"Round {call.attempt_number}"
         round_num = call.stage.round_number if call.stage else 1
 
-        # Extract/overwrite verified facts with latest confirmed data
+        rec_val = _get_field(sc, "recommendation")
+        rec_str = rec_val.value if hasattr(rec_val, "value") else str(rec_val) if rec_val else "HOLD"
+
+        rounds_history.append({
+            "call_id": call.id,
+            "round_number": round_num,
+            "stage_name": stage_name,
+            "date": call.created_at.isoformat() if call.created_at else None,
+            "duration_seconds": call.duration_seconds,
+            "recommendation": rec_str,
+            "score_overall": _get_field(sc, "score_overall"),
+            "summary": _get_field(sc, "ai_summary") or "",
+            "concerns": _get_field(sc, "concerns") or [],
+            "ai_concerns": _get_field(sc, "ai_concerns") or "",
+        })
+
+    # 2. Extract verified facts and skills ONLY from prior stages for voice prompt injection
+    for call in prior_stage_calls:
+        sc = call.screening
+        round_num = call.stage.round_number if call.stage else 1
+
+        # Extract/overwrite verified facts with latest confirmed data from prior stages
         np_days = _get_field(sc, "notice_period_days")
         if np_days is not None:
             verified_facts["notice_period_days"] = np_days
@@ -96,35 +131,18 @@ def build_candidate_memory_graph(rc: models.RoleCandidate) -> dict[str, Any]:
                     "verified_in_round": round_num,
                 }
             else:
-                # Update with higher depth or years if discovered
                 existing = skills_by_name[name_key]
                 if years and (not existing.get("years") or years > existing["years"]):
                     existing["years"] = years
                 if depth in ("deep", "working"):
                     existing["depth"] = depth
 
-        rec_val = _get_field(sc, "recommendation")
-        rec_str = rec_val.value if hasattr(rec_val, "value") else str(rec_val) if rec_val else "HOLD"
-
-        rounds_history.append({
-            "call_id": call.id,
-            "round_number": round_num,
-            "stage_name": stage_name,
-            "date": call.created_at.isoformat() if call.created_at else None,
-            "duration_seconds": call.duration_seconds,
-            "recommendation": rec_str,
-            "score_overall": _get_field(sc, "score_overall"),
-            "summary": _get_field(sc, "ai_summary") or "",
-            "concerns": _get_field(sc, "concerns") or [],
-            "ai_concerns": _get_field(sc, "ai_concerns") or "",
-        })
-
-    # Format human/LLM-readable briefing text for voice agent injection
-    if completed_calls:
+    # Format human/LLM-readable briefing text for voice agent injection (transferred from prior rounds)
+    if prior_stage_calls:
         briefing_lines = [
             f"Candidate: {rc.candidate.full_name}",
             f"Role Requisition: {rc.role.title}",
-            f"Previous Interview Rounds Completed: {len(rounds_history)}",
+            f"Previous Interview Rounds Completed: {len(prior_stage_calls)}",
         ]
 
         if verified_facts.get("notice_period_days") is not None:
@@ -147,14 +165,14 @@ def build_candidate_memory_graph(rc: models.RoleCandidate) -> dict[str, Any]:
             ]
             briefing_lines.append(f"- Skills already verified in previous rounds: {', '.join(skill_strs)}.")
 
-        # Latest round summary & watchpoints
-        latest_round = rounds_history[-1]
+        # Latest prior round summary & watchpoints
+        latest_prior_round = [r for r in rounds_history if r.get("round_number", 1) < current_round_num][-1]
         briefing_lines.append(
-            f"- Last Round ({latest_round['stage_name']}) Result: {latest_round['recommendation']} "
-            f"({latest_round.get('score_overall') or '—'}/100). Summary: {latest_round['summary']}"
+            f"- Last Round ({latest_prior_round['stage_name']}) Result: {latest_prior_round['recommendation']} "
+            f"({latest_prior_round.get('score_overall') or '—'}/100). Summary: {latest_prior_round['summary']}"
         )
-        if latest_round.get("ai_concerns"):
-            briefing_lines.append(f"- Key focus areas / watchpoints to probe in this round: {latest_round['ai_concerns']}")
+        if latest_prior_round.get("ai_concerns"):
+            briefing_lines.append(f"- Key focus areas / watchpoints to probe in this round: {latest_prior_round['ai_concerns']}")
 
         briefing_text = "\n".join(briefing_lines)
     else:

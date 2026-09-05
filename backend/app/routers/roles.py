@@ -526,12 +526,13 @@ async def queue_for_call(role_id: str, payload: schemas.QueueForCallRequest, db:
         except HunarAPIError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
+        prior_attempts = db.query(models.Call).filter(models.Call.role_candidate_id == rc.id).count()
         call = models.Call(
             role_candidate_id=rc.id,
             role_id=role.id,
             candidate_id=rc.candidate_id,
             stage_id=rc.current_stage_id,
-            attempt_number=1,
+            attempt_number=prior_attempts + 1,
             hunar_call_id=hunar_call["id"],
             agent_id=target_agent_id,
             request_id=request_id,

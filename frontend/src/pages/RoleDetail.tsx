@@ -1056,7 +1056,9 @@ function PipelineSection({
             </thead>
             <tbody>
               {displayedPipeline.map((rc) => {
-                const latestCall = rc.calls?.[0];
+                const stageCalls = rc.calls?.filter((c) => !rc.current_stage_id || c.stage_id === rc.current_stage_id) || [];
+                const latestStageCall = stageCalls[0] || null;
+                const latestCall = latestStageCall || rc.calls?.[0];
                 const screening = latestCall?.screening;
                 const hasEvidence = (rc.fit_strengths?.length || 0) > 0 || (rc.fit_gaps?.length || 0) > 0;
                 const hasPhone = Boolean(rc.candidate.phone_number);
@@ -1269,7 +1271,7 @@ function PipelineSection({
                                 onClick={() => handleAdvance(rc.id, rc.candidate.full_name, nextStage.name)}
                                 disabled={actionInProgress || advancingRcId === rc.id}
                                 className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-2xs"
-                                title={`Advance ${rc.candidate.full_name} to Round ${nextStage.round_number}: ${nextStage.name}`}
+                                title={`Advance ${rc.candidate.full_name} to Round ${nextStage.round_number}: ${nextStage.name} (transfers memory to next round)`}
                               >
                                 {advancingRcId === rc.id ? (
                                   <Spinner className="mr-1 h-3 w-3" />
@@ -1282,23 +1284,31 @@ function PipelineSection({
                             {(rc.status === "SOURCED" || rc.status === "SHORTLISTED") && (
                               <Button
                                 size="sm"
-                                variant={rc.status === "SHORTLISTED" && !screening ? "default" : "outline"}
+                                variant={!latestStageCall && rc.status === "SHORTLISTED" ? "default" : "outline"}
                                 onClick={() => handleQueue([rc.id])}
                                 disabled={actionInProgress || !hasPhone}
                                 className={cn(
                                   "h-7 text-xs",
-                                  rc.status === "SHORTLISTED" && !screening ? "bg-primary hover:bg-primary/90 text-white" : ""
+                                  !latestStageCall && rc.status === "SHORTLISTED" ? "bg-primary hover:bg-primary/90 text-white" : "",
+                                  latestStageCall && latestStageCall.status !== "COMPLETED" ? "text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40" : ""
                                 )}
                                 title={
-                                  latestCall?.status === "COMPLETED"
-                                    ? "Re-dial candidate with Hunar AI"
-                                    : hasPhone
-                                    ? "Trigger Hunar voice call"
-                                    : "Cannot call without a phone number"
+                                  !latestStageCall
+                                    ? (hasPhone ? "Trigger Hunar voice call" : "Cannot call without a phone number")
+                                    : "Retry this round afresh (without prior call memory)"
                                 }
                               >
-                                <PhoneCall className="mr-1 h-3.5 w-3.5" />
-                                <span>{latestCall?.status === "COMPLETED" ? "Re-call" : "Call"}</span>
+                                {!latestStageCall ? (
+                                  <>
+                                    <PhoneCall className="mr-1 h-3.5 w-3.5" />
+                                    <span>Call</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                                    <span>Retry</span>
+                                  </>
+                                )}
                               </Button>
                             )}
                             <Button
