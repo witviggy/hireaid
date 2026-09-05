@@ -25,7 +25,6 @@ import {
   User,
   Layers,
   Brain,
-  Sparkles,
   ShieldCheck,
 } from "lucide-react";
 import { api } from "../api";
@@ -1519,9 +1518,6 @@ export default function CandidateDetail() {
                   <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                     Cross-Round Conversation Memory &amp; AI Continuity
                   </h2>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-semibold text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                    <Sparkles className="h-3 w-3" /> Adaptive Agent Brain
-                  </span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Zero-latency memory continuity: Preserved facts and demonstrated competencies from completed rounds are compiled and briefed into subsequent stage AI voice callers.
