@@ -55,6 +55,7 @@ export default function DigitalTwinLab() {
   const [selectedRoleId, setSelectedRoleId] = useState<string>("");
   const [stages, setStages] = useState<RoleStage[]>([]);
   const [selectedStageId, setSelectedStageId] = useState<string>("");
+  const [maxTurns, setMaxTurns] = useState<number>(8);
 
   const [personas, setPersonas] = useState<DigitalTwinPersona[]>([]);
   const [selectedPersonaId, setSelectedPersonaId] = useState<string>("");
@@ -170,7 +171,7 @@ export default function DigitalTwinLab() {
         role_id: selectedRoleId,
         stage_id: selectedStageId || undefined,
         persona_id: selectedPersonaId,
-        max_turns: 6,
+        max_turns: maxTurns,
       });
       setSimulationResult(result);
     } catch (err: any) {
@@ -443,7 +444,7 @@ export default function DigitalTwinLab() {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Role Picker */}
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium">
@@ -481,6 +482,23 @@ export default function DigitalTwinLab() {
                   ) : (
                     <option value="">Round 1: Screening (Default)</option>
                   )}
+                </Select>
+              </div>
+
+              {/* Simulation Depth Picker */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">
+                  Simulation Depth
+                </Label>
+                <Select
+                  value={String(maxTurns)}
+                  onChange={(e) => setMaxTurns(Number(e.target.value))}
+                  className="h-9 text-xs"
+                >
+                  <option value="4">4 Rounds (~7 turns · Quick)</option>
+                  <option value="6">6 Rounds (~11 turns · Standard)</option>
+                  <option value="8">8 Rounds (~15 turns · Deep)</option>
+                  <option value="10">10 Rounds (~19 turns · Comprehensive)</option>
                 </Select>
               </div>
 

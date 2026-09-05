@@ -259,26 +259,30 @@ async def simulate_digital_twin_dialogue(
             candidate_reply = "I understand. I think that clarifies what I needed to know, thank you."
         dialogue.append({"speaker": "CANDIDATE", "text": candidate_reply})
 
-        # Check for natural end of conversation from candidate
-        lower_reply = candidate_reply.lower()
-        if any(term in lower_reply for term in ["bye", "goodbye", "call me back", "not interested", "stop here", "have a good day"]):
-            if turn_idx >= 2:
-                # Recruiter delivers quick polite exit
-                agent_messages = [
-                    {"role": "system", "content": (
-                        f"{agent_system_prompt}\n\n"
-                        f"CRITICAL DIRECTIVE - CALL CONCLUDED:\n"
-                        f"The candidate is ending the call. Deliver a polite, 1-sentence parting acknowledgment wishing them well (under 20 words). DO NOT ask any questions."
-                    )},
-                ]
-                for t in dialogue:
-                    role_tag = "user" if t["speaker"] == "CANDIDATE" else "assistant"
-                    agent_messages.append({"role": role_tag, "content": t["text"]})
-                agent_reply = await chat_messages(agent_messages, temperature=0.2, max_tokens=300)
-                if not agent_reply or not agent_reply.strip():
-                    agent_reply = "Understood. Thank you for your time today, and have a great day!"
-                dialogue.append({"speaker": "AGENT", "text": agent_reply})
-                break
+        # Only trigger candidate early termination on explicit hang-up / disconnecting
+        lower_clean = lower_reply.strip()
+        is_explicit_hangup = (
+            lower_clean.startswith(("bye", "goodbye", "i have to hang up"))
+            or "hanging up now" in lower_clean
+            or "please stop calling" in lower_clean
+        )
+        if is_explicit_hangup and turn_idx >= 2:
+            # Recruiter delivers quick polite exit
+            agent_messages = [
+                {"role": "system", "content": (
+                    f"{agent_system_prompt}\n\n"
+                    f"CRITICAL DIRECTIVE - CALL CONCLUDED:\n"
+                    f"The candidate has hung up or asked to end the call. Deliver a polite, 1-sentence parting acknowledgment wishing them well (under 15 words). DO NOT ask any questions."
+                )},
+            ]
+            for t in dialogue:
+                role_tag = "user" if t["speaker"] == "CANDIDATE" else "assistant"
+                agent_messages.append({"role": role_tag, "content": t["text"]})
+            agent_reply = await chat_messages(agent_messages, temperature=0.2, max_tokens=300)
+            if not agent_reply or not agent_reply.strip():
+                agent_reply = "Understood. Thank you for your time today, and have a great day!"
+            dialogue.append({"speaker": "AGENT", "text": agent_reply})
+            break
 
         # 2. Agent's turn to respond to Candidate
         if is_final_round:
@@ -313,28 +317,18 @@ async def simulate_digital_twin_dialogue(
         else:
             dialogue.append({"speaker": "AGENT", "text": agent_reply})
 
-        # Check if Agent initiated a call closing or Dealbreaker Fast-Exit
+        # Check if Agent explicitly executed a Dealbreaker Fast-Exit before final round
         lower_agent = agent_reply.lower()
-        wrap_up_signals = [
-            "thank you for your time",
-            "goodbye",
-            "have a great day",
-            "have a good day",
-            "have a wonderful day",
-            "wish you the best",
-            "wish you all the best",
-            "end our conversation",
-            "end this call",
-            "conclude our",
-            "not aligned at this time",
-            "won't be able to move forward",
-            "will not be moving forward",
-            "best of luck",
-            "sharing your profile",
-            "sharing your notes",
-            "hear back within",
+        dealbreaker_signals = [
+            "wish you the best in your search",
+            "wish you all the best in your search",
+            "we will not be moving forward",
+            "won't be able to move forward with your application",
+            "end our conversation here",
+            "conclude our discussion here",
+            "conclude our call here",
         ]
-        call_concluded = is_final_round or any(signal in lower_agent for signal in wrap_up_signals)
+        call_concluded = is_final_round or any(signal in lower_agent for signal in dealbreaker_signals)
 
         if call_concluded:
             # Let candidate deliver a final polite parting acknowledgment
