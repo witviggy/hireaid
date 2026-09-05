@@ -1074,7 +1074,11 @@ function PipelineSection({
                 const attemptCount = stageCalls.length;
                 const isMaxRetriesReached = (attemptCount >= 3 || rc.status === "UNREACHABLE") && latestStageCall?.status !== "COMPLETED";
 
-                const currentStageIndex = stages.findIndex((s) => s.id === rc.current_stage_id);
+                let currentStageIndex = stages.findIndex((s) => s.id === rc.current_stage_id);
+                if (currentStageIndex === -1 && rc.current_stage?.round_number) {
+                  // current_stage_id can point to a stage no longer in this role's live stage list; match by round number instead.
+                  currentStageIndex = stages.findIndex((s) => s.round_number === rc.current_stage!.round_number);
+                }
                 const nextStage =
                   currentStageIndex >= 0 && currentStageIndex + 1 < stages.length
                     ? stages[currentStageIndex + 1]
