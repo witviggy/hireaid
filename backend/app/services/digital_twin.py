@@ -260,6 +260,7 @@ async def simulate_digital_twin_dialogue(
         dialogue.append({"speaker": "CANDIDATE", "text": candidate_reply})
 
         # Only trigger candidate early termination on explicit hang-up / disconnecting
+        lower_reply = candidate_reply.lower()
         lower_clean = lower_reply.strip()
         is_explicit_hangup = (
             lower_clean.startswith(("bye", "goodbye", "i have to hang up"))
