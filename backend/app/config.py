@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     # LLM used for JD-criteria extraction and candidate ranking (Groq, OpenAI-compatible API)
     groq_api_key: str = ""
-    groq_model: str = "qwen/qwen3.8-27b"
+    groq_model: str = "openai/gpt-oss-120b"
     groq_api_base_url: str = "https://api.groq.com/openai/v1"
 
     @property

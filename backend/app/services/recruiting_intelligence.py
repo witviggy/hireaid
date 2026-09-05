@@ -150,13 +150,13 @@ async def generate_screening(
         f"Ideal candidate summary: {role_criteria.get('summary') or role_criteria.get('ai_summary') or 'n/a'}"
     )
 
-    # Format transcript turns if available
+    # Ensure full verbatim transcript is included for accurate evaluation
     transcript_body = ""
-    if transcript_turns:
+    if transcript and transcript.strip():
+        transcript_body = transcript.strip()
+    elif transcript_turns:
         formatted_turns = [f"{t.get('speaker', 'Speaker')}: {t.get('text', '')}" for t in transcript_turns]
         transcript_body = "\n".join(formatted_turns)
-    elif transcript:
-        transcript_body = transcript
 
     user_prompt = (
         f"Hiring criteria:\n{criteria_text}\n\n"

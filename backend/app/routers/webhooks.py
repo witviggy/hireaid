@@ -76,7 +76,14 @@ async def hunar_webhook(request: Request, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(call)
 
-    if not was_terminal and call.status in TERMINAL_STATUSES:
+    # If recording is available and not yet transcribed, transcribe and evaluate immediately!
+    if call.recording_url and not call.transcript:
+        from ..services.call_sync import evaluate_call_internal
+        try:
+            await evaluate_call_internal(db, call)
+        except Exception as exc:
+            logger.warning("Automatic post-recording transcription failed for call %s: %s", call.id, exc)
+    elif not was_terminal and call.status in TERMINAL_STATUSES:
         await _handle_terminal(db, call)
         db.commit()
 

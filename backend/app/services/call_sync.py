@@ -154,9 +154,13 @@ async def sync_call(db: Session, call: models.Call) -> models.Call:
         call.ended_at = hunar_call["ended_at"]
     db.add(call)
     db.commit()
-    db.refresh(call)
-
-    if not was_terminal and call.status in TERMINAL_STATUSES:
+    # If recording is available and not yet transcribed, transcribe and evaluate immediately!
+    if call.recording_url and not call.transcript:
+        try:
+            await evaluate_call_internal(db, call)
+        except Exception as exc:
+            logger.warning("Automatic post-recording transcription failed during sync for call %s: %s", call.id, exc)
+    elif not was_terminal and call.status in TERMINAL_STATUSES:
         await _handle_terminal(db, call)
         db.commit()
     return call

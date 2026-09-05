@@ -36,8 +36,8 @@ def _extract_json(text: str) -> Any:
 async def _post_groq(payload: dict[str, Any]) -> dict[str, Any]:
     """Helper to send request to Groq with rate-limit backoff and valid fallback models."""
     primary_model = payload.get("model") or settings.groq_model
-    # Models available on this Groq account in priority order
-    candidate_models = [primary_model, "qwen/qwen3.6-27b", "openai/gpt-oss-20b"]
+    # Models available on this Groq account in priority order (120B parameter flagship first)
+    candidate_models = [primary_model, "openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
     seen = set()
     models_chain = [m for m in candidate_models if m and not (m in seen or seen.add(m))]
 
@@ -71,7 +71,7 @@ async def _post_groq(payload: dict[str, Any]) -> dict[str, Any]:
     raise LLMError("Groq API request failed without response")
 
 
-async def chat_json(system_prompt: str, user_prompt: str, max_tokens: int = 600) -> Any:
+async def chat_json(system_prompt: str, user_prompt: str, max_tokens: int = 8192) -> Any:
     if not settings.groq_api_key:
         raise LLMError("GROQ_API_KEY is not configured")
 
