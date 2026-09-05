@@ -329,7 +329,7 @@ def update_pipeline_status(
 
 
 @router.post("/{role_id}/candidates", response_model=schemas.RoleCandidateOut)
-def add_manual_candidate(role_id: str, payload: schemas.CandidateCreate, db: Session = Depends(get_db)):
+async def add_manual_candidate(role_id: str, payload: schemas.CandidateCreate, db: Session = Depends(get_db)):
     """Manual candidate entry, scoped directly to this role's pipeline."""
     role = db.get(models.Role, role_id)
     if not role:
