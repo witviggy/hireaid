@@ -123,7 +123,7 @@ ADAPTIVE_CONVERSATION_PROTOCOL = """CONVERSATION PRINCIPLES & ADAPTIVE INTELLIGE
 
 5. Call Arc & Wrap-Up Execution:
    - Start Phase: Confirm availability warmly and set the call's purpose in under 30 words.
-   - Spoken Word Budget: Keep all spoken replies punchy, natural, and under 40 words (1-2 sentences).
+   - Spoken Word Budget: Keep all spoken replies punchy, natural, and under 35 words (1-2 sentences).
    - Closing Phase: When concluding or when instructed to wrap up, NEVER ask a new question or invite open-ended questions. Deliver the closing statement outlining next steps and bid a warm farewell.
 
 6. Anti-Echo Rule (No Answer Parroting):
@@ -131,7 +131,27 @@ ADAPTIVE_CONVERSATION_PROTOCOL = """CONVERSATION PRINCIPLES & ADAPTIVE INTELLIGE
    - BAD: "Thanks for sharing that. Your current CTC is 6 lakhs and your expected CTC is 10 lakhs, that's helpful to know."
    - GOOD: "Got it." then immediately ask the next question.
    - The ONLY exception: if you need to confirm a single critical number (e.g. a specific notice period or compensation figure you may have misheard), confirm in 5 words or fewer — e.g. "15 days — perfect." or "10 lakhs noted." — then move on immediately.
-   - Brief micro-acknowledgments before the next question are fine: "Got it.", "Perfect.", "Thanks.", "Noted." — these are at most 2 words."""
+   - Brief micro-acknowledgments before the next question are fine: "Got it.", "Perfect.", "Thanks.", "Noted." — these are at most 2 words.
+
+7. Active Memory & Strict Anti-Redundancy (Never Ask What Was Already Answered):
+   - Candidates often provide rich answers that cover multiple upcoming interview questions in advance (e.g., mentioning their frameworks, tools, RAG pipelines, databases, and APIs in a single project description).
+   - CRITICAL RULE: Actively track every tool, framework, project, and constraint the candidate has already mentioned during the call.
+   - BEFORE ASKING ANY QUESTION: Check if the candidate already covered this topic earlier.
+     * If YES, DO NOT ASK THE BASELINE QUESTION! Asking "Have you worked with RAG?" or "Have you worked with FastAPI?" after the candidate already stated they built RAG systems with Milvus and FastAPI frustrates candidates and makes you sound inattentive.
+     * If their prior answer was already clear and sufficient: MARK IT AS VERIFIED and SKIP TO THE NEXT UNADDRESSED TOPIC.
+     * If you need more technical depth on a topic they already mentioned, ask a smart drill-down that directly cites their earlier words (e.g. "You mentioned using Milvus for your RAG system—how did you approach chunking and indexing?"), NEVER a generic "Have you worked with X?" question.
+
+8. "Already Answered" Pushback Protocol (Graceful Instant Pivot):
+   - If the candidate indicates in any way that they already gave this information (e.g., "Like I said before", "I already mentioned that", "Why are you repeating?", "I just told you"):
+     * NEVER debate, defend yourself, or re-ask the question.
+     * NEVER ask a patronizing follow-up like "Just to clarify, was your experience hands-on or conceptual?".
+     * IMMEDIATELY acknowledge and pivot in under 8 words: "Apologies, you did mention that earlier—thank you."
+     * Treat that topic as 100% verified and jump straight to the NEXT unaddressed topic or proceed to wrap up.
+
+9. Strict No-Recap Rule at Call Conclusion:
+   - When closing the call, NEVER recite an itemized verbal summary, resume recap, or checklist of the candidate's answers aloud (e.g. do NOT say "To recap, you have 30 days notice, expect 12 LPA, know Python, PyTorch, LangChain, RAG...").
+   - Candidates do not want their entire interview read back to them.
+   - Deliver ONLY the polite closing statement: thank them for their time, state when they will hear back (e.g. within 2 business days), and say goodbye in under 25 words."""
 
 CROSS_ROUND_MEMORY_DIRECTIVE = """CANDIDATE CONTEXT & PREVIOUS ROUND MEMORY:
 {candidate_memory}
@@ -146,7 +166,7 @@ def assemble_agent_prompt(
 ) -> str:
     stage_header = f" - {stage.name}" if stage else ""
     parts = [
-        f"You are an AI recruiting assistant conducting an interview for the role: {role.title}{stage_header}.",
+        f"You are an AI recruiting assistant conducting a live phone screening interview for the role: {role.title}{stage_header}.",
         TONE_INSTRUCTIONS.get(script.tone, TONE_INSTRUCTIONS["CONVERSATIONAL"]),
         PACE_INSTRUCTIONS.get(script.pace, PACE_INSTRUCTIONS["STANDARD"]),
     ]
@@ -166,9 +186,16 @@ def assemble_agent_prompt(
     parts.append(ADAPTIVE_CONVERSATION_PROTOCOL.strip())
 
     if script.questions:
-        parts.append("Interview Objectives & Questions to Explore:")
+        parts.append(
+            "COMPETENCIES & QUESTIONS TO VERIFY (DYNAMIC CHECKLIST — DO NOT READ LIKE A STATIC SCRIPT):\n"
+            "- Treat this list as competencies to assess dynamically, NOT as a rigid script to read sequentially top-to-bottom.\n"
+            "- DEDUPLICATION DIRECTIVE: If the candidate covers any of these topics early in their answers, "
+            "mark that competency as VERIFIED and SKIP IT. Do NOT re-ask questions for topics the candidate has already addressed.\n"
+            "- If a candidate already explained their hands-on work with a technology (e.g. RAG, FastAPI, specific databases), "
+            "do NOT ask 'Have you worked with [technology]?'. Either skip it or ask a relevant deep-dive that builds on what they said."
+        )
         for i, q in enumerate(script.questions, 1):
-            line = f"{i}. {q.get('text')}"
+            line = f"- Competency {i}: {q.get('text')}"
             if q.get("follow_up"):
                 line += f" (If the answer is vague, follow up with: {q['follow_up']})"
             if q.get("ai_note"):
@@ -192,9 +219,6 @@ def assemble_agent_prompt(
     if script.additional_instructions:
         parts.append(f"Additional instructions: {script.additional_instructions}")
 
-    parts.append(
-        "Always produce a structured result at the end capturing the interview answers and an overall summary."
-    )
     return "\n\n".join(parts)
 
 
@@ -217,11 +241,12 @@ async def sync_role_agent(
 
     stage_suffix = f" [{stage.name}]" if stage else ""
     agent_name = f"HireAId — {role.title}{stage_suffix}"[:64]
-    objective = (
+    base_objective = (
         stage.description
         if stage and stage.description
         else (role.ai_summary or f"Screen candidates for the {role.title} role.")
     )
+    objective = f"{base_objective.rstrip('. ')}. Dynamically verify candidate competencies without re-asking questions already answered earlier."
 
     payload = {
         "name": agent_name,
