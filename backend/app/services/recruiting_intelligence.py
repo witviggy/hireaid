@@ -118,6 +118,7 @@ Evaluate the candidate accurately based on what they actually stated during the 
 Respond with ONLY a valid JSON object matching this schema:
 {
   "interest_level": "high" | "medium" | "low" | "not_interested",
+  "call_disposition": "COMPLETED" | "CALLBACK_REQUESTED" | "WRONG_NUMBER" | "NOT_INTERESTED" | "INCOMPLETE",
   "notice_period_days": <integer or null, e.g. 15 if candidate says 15 days or 30 if 1 month>,
   "expected_ctc_min": <integer or null, in LPA or role currency, e.g. 6 if candidate says 6 LPA>,
   "expected_ctc_max": <integer or null, e.g. 6 or 8>,
@@ -127,19 +128,27 @@ Respond with ONLY a valid JSON object matching this schema:
   "concerns": ["concise concern bullet", "..."],
   "competing_offers": <true | false | null>,
   "skill_assessments": [{"skill": "...", "years": <int or null>, "depth": "surface" | "working" | "deep" | "unknown"}],
-  "score_technical": <0-100 score based on must-have skills match>,
-  "score_experience": <0-100 score based on seniority and background>,
-  "score_location": <0-100 score based on location or relocation willingness>,
-  "score_compensation": <0-100 score based on budget fit>,
-  "score_availability": <0-100 score based on notice period, e.g. <=15 days = 95, 30 days = 80, >60 days = 50>,
-  "score_overall": <0-100 weighted overall candidate fit>,
+  "score_technical": <0-100 score based on must-have skills match, or null if interview could not be conducted>,
+  "score_experience": <0-100 score based on seniority and background, or null if interview could not be conducted>,
+  "score_location": <0-100 score based on location or relocation willingness, or null>,
+  "score_compensation": <0-100 score based on budget fit, or null>,
+  "score_availability": <0-100 score based on notice period, e.g. <=15 days = 95, 30 days = 80, >60 days = 50, or null>,
+  "score_overall": <0-100 weighted overall candidate fit, or null if interview could not be conducted>,
   "recommendation": "ADVANCE" | "HOLD" | "REJECT",
   "ai_summary": "<2-3 sentence recruiter evaluation summary of candidate's verified skills, experience, and role alignment>",
-  "ai_concerns": "<1-2 sentence assessment of any gaps, seniority friction, or compensation considerations, or empty string if none>"
+  "ai_concerns": "<1-2 sentence assessment of any gaps, seniority friction, compensation considerations, or callback request note, or empty string if none>"
 }
 Guidelines:
+- CRITICAL RULE - CALL DEFLECTION / BUSY CANDIDATE / CALLBACK REQUEST:
+  If the candidate picked up the call but could NOT participate in the interview because they were driving, in a meeting, at work, busy, traveling, or explicitly asked: "Can I speak to you later?", "Call me back later", "Can we do this tomorrow?", "Not a good time right now", "I'm driving", etc.:
+  1. Set "call_disposition": "CALLBACK_REQUESTED".
+  2. Set "recommendation": "HOLD" (NEVER set REJECT for someone who is simply busy or asked for a callback!).
+  3. Leave "score_overall", "score_technical", and "score_experience" as null (do NOT assign a failing score of 0 or 10 points when the interview did not take place).
+  4. In "ai_summary", state clearly: "Candidate was reached but unavailable to talk at call time (e.g. driving/busy) and requested a callback. Technical screening was not conducted."
+  5. In "ai_concerns", state: "Callback / reschedule required. Candidate was unavailable at call time."
 - If the candidate explicitly answered questions in the transcript (such as notice period, expected CTC, relocation, experience with tools), extract those exact values.
-- recommendation should be ADVANCE if score_overall >= 70, HOLD if 50-69, and REJECT if below 50.
+- If an actual interview took place:
+  recommendation should be ADVANCE if score_overall >= 70, HOLD if 50-69, and REJECT if below 50.
 - Ensure recommendation is strictly one of 'ADVANCE', 'HOLD', 'REJECT'."""
 
 
@@ -185,15 +194,42 @@ async def generate_screening(
         except (TypeError, ValueError):
             return None
 
+    call_disp = str(result.get("call_disposition", "")).strip().upper()
+    summary_lower = str(result.get("ai_summary", "")).lower()
+    concerns_lower = str(result.get("ai_concerns", "")).lower()
+    transcript_lower = transcript_body.lower()
+
+    callback_triggers = [
+        "callback", "speak later", "call me back", "call back later",
+        "driving", "in a meeting", "not a good time", "could not speak",
+        "unavailable to talk", "busy right now", "talk later", "call later",
+        "call tomorrow", "speak tomorrow", "cannot talk", "can't talk"
+    ]
+
+    is_callback = (
+        call_disp in ("CALLBACK_REQUESTED", "INCOMPLETE")
+        or any(k in summary_lower for k in ["callback", "speak later", "call me back", "driving", "in a meeting", "not a good time", "could not speak", "unavailable to talk", "busy right now"])
+        or any(k in concerns_lower for k in ["callback", "reschedule", "unavailable at call time"])
+        or (len(transcript_turns or []) <= 4 and any(k in transcript_lower for k in callback_triggers))
+    )
+
     overall = _int_or_none(result.get("score_overall"))
     raw_rec = str(result.get("recommendation", "")).strip().upper()
-    if raw_rec not in ("ADVANCE", "HOLD", "REJECT"):
+
+    if is_callback:
+        raw_rec = "HOLD"
+        call_disp = "CALLBACK_REQUESTED"
+        if overall is not None and overall < 50:
+            overall = None
+    elif raw_rec not in ("ADVANCE", "HOLD", "REJECT"):
         if overall is not None:
             raw_rec = "ADVANCE" if overall >= 70 else "HOLD" if overall >= 50 else "REJECT"
         else:
             raw_rec = "HOLD"
 
     return {
+        "call_disposition": call_disp or "COMPLETED",
+        "is_callback_requested": is_callback,
         "interest_level": result.get("interest_level") or "medium",
         "notice_period_days": _int_or_none(result.get("notice_period_days")),
         "expected_ctc_min": _int_or_none(result.get("expected_ctc_min")),
@@ -204,8 +240,8 @@ async def generate_screening(
         "concerns": result.get("concerns", []) or [],
         "competing_offers": result.get("competing_offers"),
         "skill_assessments": result.get("skill_assessments", []) or [],
-        "score_technical": _int_or_none(result.get("score_technical")),
-        "score_experience": _int_or_none(result.get("score_experience")),
+        "score_technical": None if is_callback and (_int_or_none(result.get("score_technical")) or 0) < 50 else _int_or_none(result.get("score_technical")),
+        "score_experience": None if is_callback and (_int_or_none(result.get("score_experience")) or 0) < 50 else _int_or_none(result.get("score_experience")),
         "score_location": _int_or_none(result.get("score_location")),
         "score_compensation": _int_or_none(result.get("score_compensation")),
         "score_availability": _int_or_none(result.get("score_availability")),

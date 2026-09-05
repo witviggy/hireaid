@@ -73,6 +73,9 @@ async def evaluate_call_internal(db: Session, call: models.Call) -> Optional[mod
     if not screening_data:
         return None
 
+    is_callback = bool(screening_data.pop("is_callback_requested", False))
+    screening_data.pop("call_disposition", None)
+
     existing_screening = db.query(models.Screening).filter(models.Screening.call_id == call.id).first()
     if existing_screening:
         for k, v in screening_data.items():
@@ -83,12 +86,19 @@ async def evaluate_call_internal(db: Session, call: models.Call) -> Optional[mod
         db.add(screening)
 
     rec = screening_data.get("recommendation")
-    role_candidate.status = {
-        "ADVANCE": models.PipelineStatus.SHORTLISTED,
-        "HOLD": models.PipelineStatus.REVIEW_NEEDED,
-        "REJECT": models.PipelineStatus.REJECTED,
-    }.get(rec, models.PipelineStatus.SCREENED)
-    role_candidate.fit_score = screening_data.get("score_overall") or role_candidate.fit_score
+    if is_callback:
+        # Candidate asked to speak later or was busy (e.g. driving) -> mark REVIEW_NEEDED, NEVER REJECTED
+        role_candidate.status = models.PipelineStatus.REVIEW_NEEDED
+    else:
+        role_candidate.status = {
+            "ADVANCE": models.PipelineStatus.SHORTLISTED,
+            "HOLD": models.PipelineStatus.REVIEW_NEEDED,
+            "REJECT": models.PipelineStatus.REJECTED,
+        }.get(rec, models.PipelineStatus.SCREENED)
+
+    # Only update fit_score if an actual interview score was produced (don't overwrite with None or 0)
+    if screening_data.get("score_overall") is not None:
+        role_candidate.fit_score = screening_data.get("score_overall")
 
     db.add(role_candidate)
     db.commit()

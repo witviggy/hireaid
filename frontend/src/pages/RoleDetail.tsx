@@ -1281,34 +1281,34 @@ function PipelineSection({
                                 <span>Advance (R{nextStage.round_number})</span>
                               </Button>
                             )}
-                            {(rc.status === "SOURCED" || rc.status === "SHORTLISTED") && (
+                            {!latestStageCall ? (
                               <Button
                                 size="sm"
-                                variant={!latestStageCall && rc.status === "SHORTLISTED" ? "default" : "outline"}
+                                variant="outline"
+                                onClick={() => handleQueue([rc.id])}
+                                disabled={actionInProgress || !hasPhone}
+                                className="h-7 text-xs font-medium"
+                                title={hasPhone ? "Trigger Hunar voice call" : "Cannot call without a phone number"}
+                              >
+                                <PhoneCall className="mr-1 h-3.5 w-3.5" />
+                                <span>Call</span>
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
                                 onClick={() => handleQueue([rc.id])}
                                 disabled={actionInProgress || !hasPhone}
                                 className={cn(
-                                  "h-7 text-xs",
-                                  !latestStageCall && rc.status === "SHORTLISTED" ? "bg-primary hover:bg-primary/90 text-white" : "",
-                                  latestStageCall && latestStageCall.status !== "COMPLETED" ? "text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40" : ""
+                                  "h-7 text-xs font-medium",
+                                  latestStageCall.status !== "COMPLETED"
+                                    ? "text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                                    : ""
                                 )}
-                                title={
-                                  !latestStageCall
-                                    ? (hasPhone ? "Trigger Hunar voice call" : "Cannot call without a phone number")
-                                    : "Retry this round afresh (without prior call memory)"
-                                }
+                                title="Retry this round afresh (without prior call memory)"
                               >
-                                {!latestStageCall ? (
-                                  <>
-                                    <PhoneCall className="mr-1 h-3.5 w-3.5" />
-                                    <span>Call</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <RotateCcw className="mr-1 h-3.5 w-3.5" />
-                                    <span>Retry</span>
-                                  </>
-                                )}
+                                <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                                <span>Retry</span>
                               </Button>
                             )}
                             <Button
