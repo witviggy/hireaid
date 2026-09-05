@@ -112,6 +112,10 @@ async def chat_messages(messages: list[dict[str, str]], temperature: float = 0.3
         import re
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
 
+    # Fallback if reasoning consumed token budget without generating final content
+    if not content and msg.get("reasoning"):
+        content = "Understood. Thank you for sharing that with me."
+
     return content
 
 

@@ -62,7 +62,8 @@ YOUR BEHAVIORAL CHARACTER & RULES:
 - You love talking at length about your background, theories, and granular procedural details.
 - When asked any question about your experience or skills, launch into a detailed, long-winded answer with excessive backstory, philosophical musings, and tangential anecdotes.
 - Use 50-70 words per response, wandering slightly off-topic before wrapping back.
-- If the recruiter politely interrupts or redirects you to the specific question, be gracious and cooperative: "Ah yes, apologies, back to your question..."
+- If the recruiter politely interrupts or redirects you to the specific question, be gracious and cooperative: "Ah yes, apologies, back to your question..." If asked for specific numbers a second time, share: Notice period is 45 days; Expected compensation is aligned with the market average for this level.
+- Never repeat the same phrases or sentences verbatim. Keep each response distinct.
 - Notice period: 45 days. Expected compensation: well-aligned with market average.
 - Keep your tone warm, intellectual, and slightly absent-minded.""",
         "candidate_profile": {
@@ -213,7 +214,14 @@ async def simulate_digital_twin_dialogue(
     role_overview = getattr(role, "description", None) or getattr(role, "ai_summary", None) or getattr(role, "jd_raw_text", "")
     if role_overview:
         role_context += f"\nRole Overview: {role_overview[:250]}."
-    candidate_system_prompt = f"{role_context}\n\n{persona.system_prompt}"
+    
+    candidate_rules = (
+        "\n\nGENERAL CONVERSATION RULES:\n"
+        "- Never repeat prior responses or stock sentences verbatim; vary your phrasing naturally.\n"
+        "- When the interviewer wraps up the call or says goodbye, do NOT introduce new topics or ask questions; "
+        "provide a brief, courteous parting remark wishing them well (under 12 words)."
+    )
+    candidate_system_prompt = f"{role_context}\n\n{persona.system_prompt}{candidate_rules}"
 
     dialogue: list[dict[str, str]] = []
 
@@ -229,8 +237,15 @@ async def simulate_digital_twin_dialogue(
 
     dialogue.append({"speaker": "AGENT", "text": intro_rendered})
 
+    closing_text = (
+        script.closing_interested
+        or f"Great - based on our conversation I'll be sharing your notes with our hiring team who will follow up on next steps within two business days. Thanks for your time and have a wonderful day!"
+    )
+
     # Alternate turns
     for turn_idx in range(1, max_turns):
+        is_final_round = (turn_idx == max_turns - 1)
+
         # 1. Candidate's turn to reply to Agent's last statement
         candidate_messages = [
             {"role": "system", "content": candidate_system_prompt},
@@ -239,7 +254,7 @@ async def simulate_digital_twin_dialogue(
             role_tag = "user" if t["speaker"] == "AGENT" else "assistant"
             candidate_messages.append({"role": role_tag, "content": t["text"]})
 
-        candidate_reply = await chat_messages(candidate_messages, temperature=0.4, max_tokens=1024)
+        candidate_reply = await chat_messages(candidate_messages, temperature=0.4, max_tokens=600)
         if not candidate_reply or not candidate_reply.strip():
             candidate_reply = "I understand. I think that clarifies what I needed to know, thank you."
         dialogue.append({"speaker": "CANDIDATE", "text": candidate_reply})
@@ -248,29 +263,55 @@ async def simulate_digital_twin_dialogue(
         lower_reply = candidate_reply.lower()
         if any(term in lower_reply for term in ["bye", "goodbye", "call me back", "not interested", "stop here", "have a good day"]):
             if turn_idx >= 2:
+                # Recruiter delivers quick polite exit
+                agent_messages = [
+                    {"role": "system", "content": (
+                        f"{agent_system_prompt}\n\n"
+                        f"CRITICAL DIRECTIVE - CALL CONCLUDED:\n"
+                        f"The candidate is ending the call. Deliver a polite, 1-sentence parting acknowledgment wishing them well (under 20 words). DO NOT ask any questions."
+                    )},
+                ]
+                for t in dialogue:
+                    role_tag = "user" if t["speaker"] == "CANDIDATE" else "assistant"
+                    agent_messages.append({"role": role_tag, "content": t["text"]})
+                agent_reply = await chat_messages(agent_messages, temperature=0.2, max_tokens=300)
+                if not agent_reply or not agent_reply.strip():
+                    agent_reply = "Understood. Thank you for your time today, and have a great day!"
+                dialogue.append({"speaker": "AGENT", "text": agent_reply})
                 break
 
         # 2. Agent's turn to respond to Candidate
-        agent_messages = [
-            {"role": "system", "content": agent_system_prompt},
-        ]
+        if is_final_round:
+            agent_messages = [
+                {"role": "system", "content": (
+                    f"{agent_system_prompt}\n\n"
+                    f"CRITICAL DIRECTIVE - FINAL TURN (CALL CONCLUDED):\n"
+                    f"This is the final turn of the screening interview. The interview is now OVER.\n"
+                    f"- DO NOT ASK ANY QUESTIONS.\n"
+                    f"- DO NOT ASK 'do you have any questions?'.\n"
+                    f"- Acknowledge the candidate's last answer in 5-8 words.\n"
+                    f"- Deliver the closing statement: \"{closing_text}\"\n"
+                    f"- Conclude with \"Have a great day!\""
+                )},
+            ]
+        else:
+            agent_messages = [
+                {"role": "system", "content": agent_system_prompt},
+            ]
+
         for t in dialogue:
             role_tag = "user" if t["speaker"] == "CANDIDATE" else "assistant"
             agent_messages.append({"role": role_tag, "content": t["text"]})
 
-        agent_reply = await chat_messages(agent_messages, temperature=0.2, max_tokens=1024)
+        agent_reply = await chat_messages(agent_messages, temperature=0.2, max_tokens=600)
         
         # Robust fallback if model produces empty content due to prompt constraints or token limits
         if not agent_reply or not agent_reply.strip():
-            agent_reply = (
-                "Thank you for sharing that with me. Based on our requirements and compensation parameters, "
-                "it appears we may not be aligned for this position at this time. I appreciate your time and wish you the best in your search."
-            )
+            agent_reply = f"Thank you for sharing that with me. {closing_text}"
             dialogue.append({"speaker": "AGENT", "text": agent_reply})
-            # If agent fast-exited on a dealbreaker or failed to produce, gracefully stop the simulation
-            break
-
-        dialogue.append({"speaker": "AGENT", "text": agent_reply})
+            call_concluded = True
+        else:
+            dialogue.append({"speaker": "AGENT", "text": agent_reply})
 
         # Check if Agent initiated a call closing or Dealbreaker Fast-Exit
         lower_agent = agent_reply.lower()
@@ -279,6 +320,7 @@ async def simulate_digital_twin_dialogue(
             "goodbye",
             "have a great day",
             "have a good day",
+            "have a wonderful day",
             "wish you the best",
             "wish you all the best",
             "end our conversation",
@@ -288,8 +330,27 @@ async def simulate_digital_twin_dialogue(
             "won't be able to move forward",
             "will not be moving forward",
             "best of luck",
+            "sharing your profile",
+            "sharing your notes",
+            "hear back within",
         ]
-        if any(signal in lower_agent for signal in wrap_up_signals):
+        call_concluded = is_final_round or any(signal in lower_agent for signal in wrap_up_signals)
+
+        if call_concluded:
+            # Let candidate deliver a final polite parting acknowledgment
+            cand_farewell_msgs = [
+                {"role": "system", "content": (
+                    f"{candidate_system_prompt}\n\n"
+                    f"CRITICAL DIRECTIVE: The recruiter has just concluded the call and said goodbye. "
+                    f"Respond with a brief, polite farewell wishing them well (under 12 words). Do not ask questions."
+                )},
+            ]
+            for t in dialogue:
+                role_tag = "user" if t["speaker"] == "AGENT" else "assistant"
+                cand_farewell_msgs.append({"role": role_tag, "content": t["text"]})
+            cand_farewell = await chat_messages(cand_farewell_msgs, temperature=0.3, max_tokens=250)
+            if cand_farewell and cand_farewell.strip():
+                dialogue.append({"speaker": "CANDIDATE", "text": cand_farewell.strip()})
             break
 
     return dialogue
