@@ -1,0 +1,124 @@
+"""Thin client for JD-criteria extraction and candidate ranking via Groq's
+OpenAI-compatible chat completions API."""
+import asyncio
+import json
+import re
+from typing import Any, Optional
+
+import httpx
+
+from ..config import get_settings
+
+settings = get_settings()
+
+
+class LLMError(RuntimeError):
+    pass
+
+
+def _extract_json(text: str) -> Any:
+    """Best-effort JSON extraction in case the model wraps output in prose/markdown."""
+    text = text.strip()
+    fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    start = min((i for i in (text.find("{"), text.find("[")) if i != -1), default=-1)
+    end = max(text.rfind("}"), text.rfind("]"))
+    if start != -1 and end != -1 and end > start:
+        return json.loads(text[start : end + 1])
+    raise LLMError(f"Could not parse JSON from LLM response: {text[:300]}")
+
+
+async def _post_groq(payload: dict[str, Any]) -> dict[str, Any]:
+    """Helper to send request to Groq with rate-limit backoff and valid fallback models."""
+    primary_model = payload.get("model") or settings.groq_model
+    # Models available on this Groq account in priority order
+    candidate_models = [primary_model, "qwen/qwen3.6-27b", "openai/gpt-oss-20b"]
+    seen = set()
+    models_chain = [m for m in candidate_models if m and not (m in seen or seen.add(m))]
+
+    last_resp = None
+    for model_name in models_chain:
+        payload["model"] = model_name
+        for attempt in range(2):
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(
+                    f"{settings.groq_api_base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.groq_api_key}",
+                        "Content-Type": "application/json",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                    },
+                    json=payload,
+                )
+            last_resp = resp
+            if resp.status_code == 200:
+                return resp.json()
+            if resp.status_code == 429:
+                # Rate limited: back off briefly before retrying or switching model
+                await asyncio.sleep(1.5 * (attempt + 1))
+                continue
+            # For 404/400 model errors, immediately try next model in chain
+            break
+
+    if last_resp is not None and last_resp.status_code >= 400:
+        raise LLMError(f"Groq API error {last_resp.status_code}: {last_resp.text}")
+
+    raise LLMError("Groq API request failed without response")
+
+
+async def chat_json(system_prompt: str, user_prompt: str, max_tokens: int = 600) -> Any:
+    if not settings.groq_api_key:
+        raise LLMError("GROQ_API_KEY is not configured")
+
+    payload = {
+        "model": settings.groq_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.1,
+        "max_tokens": max_tokens,
+        "response_format": {"type": "json_object"},
+    }
+    data = await _post_groq(payload)
+    content = data["choices"][0]["message"]["content"]
+    return _extract_json(content)
+
+
+async def chat_messages(messages: list[dict[str, str]], temperature: float = 0.3, max_tokens: int = 150) -> str:
+    """Multi-turn text generation via Groq chat completions."""
+    if not settings.groq_api_key:
+        raise LLMError("GROQ_API_KEY is not configured")
+
+    payload = {
+        "model": settings.groq_model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    data = await _post_groq(payload)
+    return data["choices"][0]["message"]["content"].strip()
+
+
+async def chat_json_messages(messages: list[dict[str, str]], temperature: float = 0.1, max_tokens: int = 500) -> Any:
+    """Multi-turn JSON response via Groq chat completions."""
+    if not settings.groq_api_key:
+        raise LLMError("GROQ_API_KEY is not configured")
+
+    payload = {
+        "model": settings.groq_model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "response_format": {"type": "json_object"},
+    }
+    data = await _post_groq(payload)
+    content = data["choices"][0]["message"]["content"]
+    return _extract_json(content)
+
+

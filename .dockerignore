@@ -1,0 +1,36 @@
+# Version control
+.git
+.gitignore
+
+# Environment files
+.env
+.env*.local
+
+# Documentation & Markdown
+*.md
+md/
+
+# Python artifacts
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv/
+.pytest_cache
+
+# Node artifacts
+node_modules
+dist
+.vite
+
+# Database & persistence
+postgres_data
+recordings/
+*.log
+
+# IDE & OS
+.idea
+.vscode
+.DS_Store
+Thumbs.db

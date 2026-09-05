@@ -1,0 +1,44 @@
+services:
+  - type: web
+    name: hireaid-backend
+    env: python
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hireaid-db
+          property: connectionString
+      - key: BACKEND_CORS_ORIGINS
+        value: http://localhost:5173,https://*.vercel.app
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: HUNAR_API_KEY
+        sync: false
+      - key: HUNAR_API_BASE_URL
+        value: https://api.voice.hunar.ai/external/v1
+      - key: HUNAR_HIRING_AGENT_ID
+        sync: false
+      - key: HUNAR_REACHOUT_AGENT_ID
+        sync: false
+      - key: HUNAR_WEBHOOK_SECRET
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: qwen/qwen3.8-27b
+      - key: PEOPLE_SEARCH_PROVIDER
+        value: sandbox
+
+databases:
+  - name: hireaid-db
+    region: oregon
+    plan: free
+    databaseName: voice_app
+    user: voice_app

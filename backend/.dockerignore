@@ -1,0 +1,34 @@
+# Version control
+.git
+.gitignore
+
+# Python caches and virtualenvs
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv
+venv/
+env/
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Environment and secrets
+.env
+.env*
+!*.env.example
+
+# Logs & temporary files
+*.log
+*.sqlite3
+*.db
+recordings/
+*.wav
+*.mp3
+
+# OS & Editor files
+.DS_Store
+.idea
+.vscode
