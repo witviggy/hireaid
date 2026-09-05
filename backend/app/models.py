@@ -152,7 +152,9 @@ class RoleCandidate(Base):
 
     role = relationship("Role", back_populates="pipeline_entries")
     candidate = relationship("Candidate", back_populates="pipeline_entries")
-    calls = relationship("Call", back_populates="role_candidate", cascade="all, delete-orphan")
+    calls = relationship(
+        "Call", back_populates="role_candidate", cascade="all, delete-orphan", order_by="desc(Call.created_at)"
+    )
     current_stage = relationship("RoleStage")
 
     @property

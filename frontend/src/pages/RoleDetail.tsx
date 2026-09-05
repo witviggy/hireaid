@@ -1079,11 +1079,10 @@ function PipelineSection({
                   currentStageIndex >= 0 && currentStageIndex + 1 < stages.length
                     ? stages[currentStageIndex + 1]
                     : null;
-                const canAdvance =
-                  nextStage !== null &&
-                  (rc.status === "SHORTLISTED" ||
-                    screening?.recommendation === "ADVANCE" ||
-                    latestCall?.status === "COMPLETED");
+                const isLastStage = nextStage === null;
+                const callAnswered = latestStageCall?.status === "COMPLETED";
+                const passedRound = callAnswered && screening?.recommendation === "ADVANCE";
+                const lowScoreCompleted = callAnswered && Boolean(screening) && screening?.recommendation !== "ADVANCE";
 
                 const currentRound = rc.current_stage?.round_number || (currentStageIndex >= 0 ? currentStageIndex + 1 : 1);
                 const totalRounds = stages.length > 0 ? stages.length : 1;
@@ -1269,36 +1268,9 @@ function PipelineSection({
                             >
                               <RotateCcw className="mr-1 h-3.5 w-3.5" /> Restore
                             </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleRemoveFromPipeline(rc.id, rc.candidate.full_name)}
-                              disabled={actionInProgress || removingRcId === rc.id}
-                              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                              title="Permanently remove candidate from this role"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
                           </>
                         ) : (
                           <>
-                            {canAdvance && nextStage && (
-                              <Button
-                                size="sm"
-                                variant="default"
-                                onClick={() => handleAdvance(rc.id, rc.candidate.full_name, nextStage.name)}
-                                disabled={actionInProgress || advancingRcId === rc.id}
-                                className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-2xs"
-                                title={`Advance ${rc.candidate.full_name} to Round ${nextStage.round_number}: ${nextStage.name} (transfers memory to next round)`}
-                              >
-                                {advancingRcId === rc.id ? (
-                                  <Spinner className="mr-1 h-3 w-3" />
-                                ) : (
-                                  <ArrowRight className="mr-1 h-3.5 w-3.5" />
-                                )}
-                                <span>Advance (R{nextStage.round_number})</span>
-                              </Button>
-                            )}
                             {isMaxRetriesReached ? (
                               <Button
                                 size="sm"
@@ -1323,6 +1295,80 @@ function PipelineSection({
                                 <PhoneCall className="mr-1 h-3.5 w-3.5" />
                                 <span>Call</span>
                               </Button>
+                            ) : passedRound && !isLastStage ? (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    setRedialConfirmTarget({
+                                      rcId: rc.id,
+                                      candidateName: rc.candidate.full_name,
+                                      phone: rc.candidate.phone_number,
+                                      attemptNumber: attemptCount + 1,
+                                    })
+                                  }
+                                  disabled={actionInProgress || !hasPhone}
+                                  className="h-7 text-xs font-medium"
+                                  title={`Recall Round ${currentRound} (Attempt ${attemptCount + 1}/3, no memory carried over)`}
+                                >
+                                  <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                                  <span>Recall (R{currentRound})</span>
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="default"
+                                  onClick={() => handleAdvance(rc.id, rc.candidate.full_name, nextStage.name)}
+                                  disabled={actionInProgress || advancingRcId === rc.id}
+                                  className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-2xs"
+                                  title={`Call ${rc.candidate.full_name} for Round ${nextStage.round_number}: ${nextStage.name} (transfers memory to next round)`}
+                                >
+                                  {advancingRcId === rc.id ? (
+                                    <Spinner className="mr-1 h-3 w-3" />
+                                  ) : (
+                                    <PhoneCall className="mr-1 h-3.5 w-3.5" />
+                                  )}
+                                  <span>Call (R{nextStage.round_number})</span>
+                                </Button>
+                              </>
+                            ) : passedRound && isLastStage ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  setRedialConfirmTarget({
+                                    rcId: rc.id,
+                                    candidateName: rc.candidate.full_name,
+                                    phone: rc.candidate.phone_number,
+                                    attemptNumber: attemptCount + 1,
+                                  })
+                                }
+                                disabled={actionInProgress || !hasPhone}
+                                className="h-7 text-xs font-medium"
+                                title={`Recall the final round (Attempt ${attemptCount + 1}/3, no memory carried over)`}
+                              >
+                                <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                                <span>Recall (Last Round)</span>
+                              </Button>
+                            ) : lowScoreCompleted ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  setRedialConfirmTarget({
+                                    rcId: rc.id,
+                                    candidateName: rc.candidate.full_name,
+                                    phone: rc.candidate.phone_number,
+                                    attemptNumber: attemptCount + 1,
+                                  })
+                                }
+                                disabled={actionInProgress || !hasPhone}
+                                className="h-7 text-xs font-medium text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                                title={`Give ${rc.candidate.full_name} another chance on Round ${currentRound} (Attempt ${attemptCount + 1}/3)`}
+                              >
+                                <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                                <span>Rechance</span>
+                              </Button>
                             ) : (
                               <Button
                                 size="sm"
@@ -1336,28 +1382,17 @@ function PipelineSection({
                                   })
                                 }
                                 disabled={actionInProgress || !hasPhone}
-                                className={cn(
-                                  "h-7 text-xs font-medium",
-                                  latestStageCall.status !== "COMPLETED"
-                                    ? "text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40"
-                                    : ""
-                                )}
-                                title={`Re-dial candidate (Attempt ${attemptCount + 1}/3)`}
+                                className="h-7 text-xs font-medium text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                                title={
+                                  callAnswered
+                                    ? `Recall Round ${currentRound} \u2014 screening still pending (Attempt ${attemptCount + 1}/3)`
+                                    : `Recall Round ${currentRound} \u2014 candidate did not complete the call (Attempt ${attemptCount + 1}/3)`
+                                }
                               >
                                 <RotateCcw className="mr-1 h-3.5 w-3.5" />
-                                <span>Retry</span>
+                                <span>Recall (R{currentRound})</span>
                               </Button>
                             )}
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleRemoveFromPipeline(rc.id, rc.candidate.full_name)}
-                              disabled={actionInProgress || removingRcId === rc.id}
-                              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                              title="Remove candidate from this role"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
                           </>
                         )}
                       </div>

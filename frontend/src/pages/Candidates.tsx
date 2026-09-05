@@ -355,18 +355,7 @@ export default function Candidates() {
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground dark:text-slate-400">
                     {c.phone_number}
                   </td>
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                      onClick={(e) => handleDeleteCandidate(c.id, c.full_name, e)}
-                      disabled={deletingId === c.id}
-                      title="Delete candidate"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </td>
+                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()} />
                 </tr>
               );
             })}

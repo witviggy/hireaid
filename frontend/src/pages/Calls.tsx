@@ -428,23 +428,7 @@ export default function Calls() {
                   </td>
 
                   {/* Actions */}
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0 text-slate-400 hover:text-destructive hover:bg-destructive/10"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteCall(c.id);
-                        }}
-                        disabled={isDeletingThis}
-                        title="Delete call record"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </td>
+                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()} />
                 </tr>
               );
             })}

@@ -246,18 +246,7 @@ export default function Roles() {
                 <td className="px-4 py-3 text-muted-foreground dark:text-slate-400">{role.seniority || "—"}</td>
                 <td className="px-4 py-3 text-muted-foreground dark:text-slate-400">{role.location_normalized || role.location || "—"}</td>
                 <td className="px-4 py-3 text-muted-foreground dark:text-slate-400">{new Date(role.created_at).toLocaleDateString()}</td>
-                <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                    onClick={(e) => handleDeleteRole(role.id, role.title, e)}
-                    disabled={deletingId === role.id}
-                    title="Delete role"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </td>
+                <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()} />
               </tr>
             ))}
             {pageRows.length === 0 && (

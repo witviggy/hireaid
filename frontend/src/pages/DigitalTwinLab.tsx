@@ -1030,21 +1030,10 @@ export default function DigitalTwinLab() {
                       >
                         {p.difficulty}
                       </span>
-                      {p.is_builtin ? (
+                      {p.is_builtin && (
                         <span className="text-[10px] uppercase font-semibold text-muted-foreground px-1.5 py-0.5 bg-slate-100 dark:bg-zinc-800 rounded">
                           Standard Built-in
                         </span>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeletePersona(p.id)}
-                          disabled={deletingPersonaId === p.id}
-                          className="h-7 w-7 p-0 text-destructive hover:bg-destructive/10"
-                          title="Delete custom persona"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
                       )}
                     </div>
 
@@ -1235,16 +1224,6 @@ export default function DigitalTwinLab() {
                                 title="Load this experiment into the Simulation Arena"
                               >
                                 <Play className="mr-1.5 h-3.5 w-3.5 fill-current text-primary" /> Load into Arena
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={(e) => handleDeleteExperiment(exp.id, e)}
-                                disabled={deletingExpId === exp.id}
-                                className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                                title="Delete this experiment run"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </div>
                           </div>
