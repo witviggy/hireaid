@@ -26,6 +26,7 @@ import {
   Layers,
   Brain,
   ShieldCheck,
+  Lock,
 } from "lucide-react";
 import { api } from "../api";
 import { CallRecord, Candidate, RoleStage, CandidateMemoryGraph } from "../types";
@@ -35,7 +36,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn, formatRoundFraction } from "@/lib/utils";
 import { formatStatus } from "../lib/format";
 
-type CandidateTabKey = "details" | "calls" | "evals";
+type CandidateTabKey = "details" | "calls" | "evals" | "memory";
 
 function formatDuration(secondsStr?: string | number | null): string {
   if (!secondsStr) return "—";
@@ -371,6 +372,14 @@ export default function CandidateDetail() {
     { key: "details", label: "Details", icon: User },
     { key: "calls", label: "Call Recordings & Transcripts", icon: Headphones, count: allCalls.length > 0 ? allCalls.length : undefined },
     { key: "evals", label: "AI Evals & Rounds", icon: Bot, count: fitScore != null ? `${fitScore}/100` : undefined },
+    {
+      key: "memory",
+      label: "Agent Memory",
+      icon: Brain,
+      count: memoryGraph?.total_rounds_completed
+        ? `${memoryGraph.total_rounds_completed} ${memoryGraph.total_rounds_completed === 1 ? "Round" : "Rounds"}`
+        : undefined,
+    },
   ];
 
   return (
@@ -1509,7 +1518,15 @@ export default function CandidateDetail() {
             </div>
           )}
 
-          {/* 3. Cross-Round Adaptive Agent Memory & AI Continuity Card */}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 4: AGENT MEMORY & CONTINUITY                                          */}
+      {/* ========================================================================= */}
+      {activeTab === "memory" && (
+        <div className="space-y-5">
+          {/* 1. Header & Overview Card */}
           <div className="rounded-[8px] border border-[#E5E7EB] bg-white p-5 shadow-[0_1px_4px_rgba(0,0,0,0.06)] dark:border-[#27272A] dark:bg-[#121215] space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-3 dark:border-[#27272A]">
               <div>
@@ -1534,16 +1551,21 @@ export default function CandidateDetail() {
             </div>
 
             {loadingMemory ? (
-              <div className="py-6 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+              <div className="py-8 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
                 <Spinner className="h-4 w-4" /> Synthesizing candidate conversation memory...
               </div>
             ) : !memoryGraph || memoryGraph.total_rounds_completed === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 p-4 text-center text-xs text-muted-foreground dark:border-zinc-800 dark:bg-zinc-900/30">
-                <Brain className="h-5 w-5 mx-auto mb-1.5 text-slate-400 opacity-70" />
-                <span className="font-semibold text-slate-700 dark:text-slate-300">No completed rounds recorded yet.</span>
-                <p className="mt-0.5 text-[11px]">
+              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 p-6 text-center text-xs text-muted-foreground dark:border-zinc-800 dark:bg-zinc-900/30 space-y-2">
+                <Brain className="h-6 w-6 mx-auto text-slate-400 opacity-70" />
+                <div className="font-semibold text-slate-700 dark:text-slate-300">No completed rounds recorded yet.</div>
+                <p className="text-[11px] max-w-md mx-auto">
                   When this candidate finishes Round 1, verified facts (Notice, CTC, Relocation) and demonstrated competencies will be anchored into this graph and briefed to subsequent stage agents.
                 </p>
+                <div className="pt-2">
+                  <Button variant="outline" size="sm" onClick={() => handleTabChange("calls")}>
+                    <Headphones className="h-3.5 w-3.5 mr-1.5" /> View Call Recordings
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="space-y-4 text-xs">
@@ -1571,67 +1593,191 @@ export default function CandidateDetail() {
                   </div>
                 </div>
 
-                {/* Prior Rounds Chronicle: ONLY rounds prior to the current selected round */}
-                {(() => {
-                  const currentSelectedRoundNum = selectedCall?.stage?.round_number || (activeSelectedStage?.round_number || 1);
-                  const priorRounds = (memoryGraph.rounds_history || []).filter(
-                    (rnd) => rnd.round_number < currentSelectedRoundNum
-                  );
+                {/* Ground Truth Facts Card */}
+                <div className="rounded-lg border border-slate-100 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 dark:border-zinc-800 mb-3">
+                    <div className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-slate-100 text-xs">
+                      <FileCheck className="h-3.5 w-3.5 text-primary" />
+                      <span>Locked Candidate Ground Truth</span>
+                    </div>
+                    <span className="text-[10px] text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded border border-purple-200 dark:border-purple-800 flex items-center gap-1 font-medium">
+                      <Lock className="h-2.5 w-2.5" /> Auto-Injected
+                    </span>
+                  </div>
 
-                  if (priorRounds.length === 0) return null;
-
-                  return (
-                    <div className="space-y-2">
-                      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                        <ClipboardList className="h-3.5 w-3.5 text-indigo-600" /> Prior Rounds Chronicle
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                    <div className="rounded-md border border-slate-100 bg-slate-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/60">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-medium text-muted-foreground">Notice Period</span>
+                        <span className="text-[9px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.2 rounded border border-emerald-200 dark:border-emerald-800">Locked</span>
                       </div>
-                      <div className="space-y-2">
-                        {priorRounds.map((rnd) => (
-                          <div
-                            key={rnd.round_number}
-                            className="rounded-lg border border-slate-100 bg-slate-50/70 p-3 dark:border-zinc-800/80 dark:bg-[#18181B]/50 flex flex-col sm:flex-row sm:items-start justify-between gap-3"
-                          >
-                            <div className="space-y-1 min-w-0 flex-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-bold text-slate-900 dark:text-slate-100">
-                                  Round {rnd.round_number}: {cleanStageName(rnd.stage_name, rnd.round_number)}
+                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1">
+                        {memoryGraph.verified_facts.notice_period_days != null
+                          ? `${memoryGraph.verified_facts.notice_period_days} days`
+                          : "—"}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Will not be re-asked</p>
+                    </div>
+
+                    <div className="rounded-md border border-slate-100 bg-slate-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/60">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-medium text-muted-foreground">Expected Compensation</span>
+                        <span className="text-[9px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.2 rounded border border-emerald-200 dark:border-emerald-800">Locked</span>
+                      </div>
+                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1">
+                        {memoryGraph.verified_facts.expected_ctc_min || memoryGraph.verified_facts.expected_ctc_max
+                          ? `₹${memoryGraph.verified_facts.expected_ctc_min || memoryGraph.verified_facts.expected_ctc_max} LPA`
+                          : "—"}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Confirmed candidate range</p>
+                    </div>
+
+                    <div className="rounded-md border border-slate-100 bg-slate-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/60">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-medium text-muted-foreground">Relocation &amp; Location</span>
+                        <span className="text-[9px] font-semibold text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-1.5 py-0.2 rounded border border-purple-200 dark:border-purple-800">Confirmed</span>
+                      </div>
+                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1">
+                        {memoryGraph.verified_facts.open_to_relocation === true
+                          ? "Open to relocate"
+                          : memoryGraph.verified_facts.open_to_relocation === false
+                          ? "Not open to relocate"
+                          : "Location confirmed"}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                        {memoryGraph.verified_facts.location_confirmed || candidate?.location || "India"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-md border border-slate-100 bg-slate-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-900/60">
+                      <div className="text-[11px] font-medium text-muted-foreground">Reason for Switching</div>
+                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-1 truncate" title={memoryGraph.verified_facts.reason_for_switching || "Seeking career growth"}>
+                        {memoryGraph.verified_facts.reason_for_switching || "Seeking career growth"}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        {memoryGraph.verified_facts.competing_offers ? "Has active offers" : "No other active offers"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cataloged Skills & Competency Matrix */}
+                {memoryGraph.skills_matrix && memoryGraph.skills_matrix.length > 0 && (
+                  <div className="rounded-lg border border-slate-100 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 dark:border-zinc-800 mb-3">
+                      <div className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-slate-100 text-xs">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <span>Cataloged Skills &amp; Competencies ({memoryGraph.skills_matrix.length})</span>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground">Verified across rounds</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                      {memoryGraph.skills_matrix.map((sk, i) => (
+                        <div
+                          key={i}
+                          className="rounded-md border border-slate-100 bg-slate-50/60 p-2.5 dark:border-zinc-800 dark:bg-zinc-900/40 flex items-start justify-between gap-2"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="font-semibold text-xs text-slate-900 dark:text-slate-100 truncate">
+                              {sk.skill}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground mt-0.5">
+                              {sk.years ? `${sk.years} ${sk.years === 1 ? "year" : "years"} exp` : "Demonstrated"}
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <span
+                              className={cn(
+                                "px-1.5 py-0.2 text-[9px] font-semibold rounded capitalize",
+                                sk.depth === "deep"
+                                  ? "bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-300 border border-purple-200 dark:border-purple-800"
+                                  : sk.depth === "working"
+                                  ? "bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                                  : "bg-slate-100 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300 border border-slate-200 dark:border-zinc-700"
+                              )}
+                            >
+                              {sk.depth || "verified"}
+                            </span>
+                            {sk.verified_in_round && (
+                              <span className="text-[9px] text-muted-foreground">
+                                Round {sk.verified_in_round}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Prior Rounds Chronicle */}
+                {memoryGraph.rounds_history && memoryGraph.rounds_history.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      <ClipboardList className="h-3.5 w-3.5 text-indigo-600" /> Completed Rounds Chronicle
+                    </div>
+                    <div className="space-y-2">
+                      {memoryGraph.rounds_history.map((rnd) => (
+                        <div
+                          key={rnd.round_number}
+                          className="rounded-lg border border-slate-100 bg-slate-50/70 p-3.5 dark:border-zinc-800/80 dark:bg-[#18181B]/50 flex flex-col sm:flex-row sm:items-start justify-between gap-3"
+                        >
+                          <div className="space-y-1.5 min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-slate-900 dark:text-slate-100">
+                                Round {rnd.round_number}: {cleanStageName(rnd.stage_name, rnd.round_number)}
+                              </span>
+                              {rnd.recommendation && (
+                                <span
+                                  className={cn(
+                                    "px-2 py-0.2 text-[10px] font-bold uppercase rounded",
+                                    rnd.recommendation === "ADVANCE"
+                                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                                      : rnd.recommendation === "HOLD"
+                                        ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                                        : "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+                                  )}
+                                >
+                                  {rnd.recommendation}
                                 </span>
-                                {rnd.recommendation && (
-                                  <span
-                                    className={cn(
-                                      "px-2 py-0.2 text-[10px] font-bold uppercase rounded",
-                                      rnd.recommendation === "ADVANCE"
-                                        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                                        : rnd.recommendation === "HOLD"
-                                          ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-                                          : "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
-                                    )}
-                                  >
-                                    {rnd.recommendation}
-                                  </span>
-                                )}
-                              </div>
-                              {rnd.summary && (
-                                <p className="text-[11px] text-slate-600 dark:text-slate-300 line-clamp-2">
-                                  {rnd.summary}
-                                </p>
+                              )}
+                              {rnd.duration_seconds && (
+                                <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                  <Clock className="h-3 w-3" /> {formatDuration(rnd.duration_seconds)}
+                                </span>
                               )}
                             </div>
-
-                            {rnd.score_overall != null && (
-                              <div className="shrink-0 text-right sm:border-l border-slate-200 dark:border-zinc-800 sm:pl-3">
-                                <div className="text-[10px] text-muted-foreground">Score</div>
-                                <div className="text-base font-bold text-slate-900 dark:text-slate-100">
-                                  {rnd.score_overall}/100
-                                </div>
+                            {rnd.summary && (
+                              <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                                {rnd.summary}
+                              </p>
+                            )}
+                            {rnd.concerns && rnd.concerns.length > 0 && (
+                              <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                                <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-400">Concerns:</span>
+                                {rnd.concerns.map((c, ci) => (
+                                  <span key={ci} className="text-[10px] bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800 px-1.5 py-0.2 rounded">
+                                    {c}
+                                  </span>
+                                ))}
                               </div>
                             )}
                           </div>
-                        ))}
-                      </div>
+
+                          {rnd.score_overall != null && (
+                            <div className="shrink-0 text-right sm:border-l border-slate-200 dark:border-zinc-800 sm:pl-3">
+                              <div className="text-[10px] text-muted-foreground">Score</div>
+                              <div className="text-base font-bold text-slate-900 dark:text-slate-100">
+                                {rnd.score_overall}/100
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                  );
-                })()}
+                  </div>
+                )}
 
                 {/* Briefing Text Carried to Active / Next Agent */}
                 {memoryGraph.briefing_text && (
@@ -1656,7 +1802,7 @@ export default function CandidateDetail() {
                         )}
                       </button>
                     </div>
-                    <div className="rounded-lg bg-slate-900 text-slate-200 p-3 font-mono text-[11px] leading-relaxed max-h-36 overflow-y-auto whitespace-pre-wrap dark:bg-black border border-slate-800">
+                    <div className="rounded-lg bg-slate-900 text-slate-200 p-3.5 font-mono text-[11px] leading-relaxed max-h-48 overflow-y-auto whitespace-pre-wrap dark:bg-black border border-slate-800">
                       {memoryGraph.briefing_text}
                     </div>
                   </div>
