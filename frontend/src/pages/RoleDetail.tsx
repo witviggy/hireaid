@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   AlertCircle,
@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronRight,
   FileText,
+  Info,
   Layers,
   ListChecks,
   MessageSquareText,
@@ -651,18 +652,86 @@ function FindCandidates({
    TAB 2: PEOPLE & PIPELINE
    ========================================================================= */
 
-function MatchScoreBadge({ score }: { score?: number | null }) {
+function MatchScoreBadge({
+  score,
+  strengths = [],
+  gaps = [],
+}: {
+  score?: number | null;
+  strengths?: string[];
+  gaps?: string[];
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isOpen]);
+
   if (score == null) return <span className="text-xs text-muted-foreground dark:text-slate-400">—</span>;
+
   const tone =
     score >= 70
       ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-950/50 dark:text-emerald-300 dark:ring-emerald-700/40"
       : score >= 40
         ? "bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-700/40"
         : "bg-rose-50 text-rose-700 ring-rose-600/20 dark:bg-rose-950/50 dark:text-rose-300 dark:ring-rose-700/40";
+
+  const hasEvidence = (strengths && strengths.length > 0) || (gaps && gaps.length > 0);
+
   return (
-    <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset", tone)}>
-      {score}/100
-    </span>
+    <div ref={containerRef} className="relative inline-flex items-center justify-center">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (hasEvidence) setIsOpen((prev) => !prev);
+        }}
+        disabled={!hasEvidence}
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset transition-all",
+          tone,
+          hasEvidence ? "cursor-pointer hover:ring-2 hover:shadow-xs select-none" : "cursor-default"
+        )}
+        title={hasEvidence ? "Click to view score rationale" : undefined}
+      >
+        <span>{score}/100</span>
+        {hasEvidence && (
+          <Info className="h-3 w-3 opacity-60 hover:opacity-100 shrink-0" />
+        )}
+      </button>
+
+      {isOpen && hasEvidence && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute left-1/2 -translate-x-1/2 top-full z-50 mt-1.5 w-64 space-y-1.5 rounded-lg border border-slate-200 bg-white p-3 shadow-xl dark:border-[#27272A] dark:bg-[#18181B] text-left text-[11px] whitespace-normal break-words animate-in fade-in-0 zoom-in-95 duration-100"
+        >
+          <div className="flex items-center justify-between pb-1 mb-1 border-b border-slate-100 dark:border-slate-800 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <span>Score Rationale</span>
+            <span className="font-mono">{score}/100</span>
+          </div>
+          {(strengths || []).map((s, i) => (
+            <div key={`s-${i}`} className="flex items-start gap-1.5 text-emerald-700 dark:text-emerald-400">
+              <span className="shrink-0 font-bold">✓</span>
+              <span>{s}</span>
+            </div>
+          ))}
+          {(gaps || []).map((s, i) => (
+            <div key={`g-${i}`} className="flex items-start gap-1.5 text-amber-700 dark:text-amber-400">
+              <span className="shrink-0 font-bold">⚠</span>
+              <span>{s}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1089,24 +1158,11 @@ function PipelineSection({
 
                     {/* 6. Fit Score */}
                     <td className="px-4 py-3 text-center align-middle whitespace-nowrap">
-                      <div className="inline-flex flex-col items-center">
-                        <MatchScoreBadge score={rc.fit_score} />
-                        {hasEvidence && (
-                          <details className="relative mt-0.5">
-                            <summary className="cursor-pointer list-none text-[10px] font-medium text-primary hover:underline focus:outline-none select-none">
-                              Why?
-                            </summary>
-                            <div className="absolute left-1/2 -translate-x-1/2 z-50 mt-1 w-56 space-y-1 rounded-md border border-slate-200 bg-white dark:border-[#27272A] dark:bg-[#18181B] p-2.5 shadow-lg text-left text-[11px] whitespace-normal break-words">
-                              {(rc.fit_strengths || []).map((s, i) => (
-                                <div key={`s-${i}`} className="text-emerald-700 dark:text-emerald-400">✓ {s}</div>
-                              ))}
-                              {(rc.fit_gaps || []).map((s, i) => (
-                                <div key={`g-${i}`} className="text-amber-700 dark:text-amber-400">⚠ {s}</div>
-                              ))}
-                            </div>
-                          </details>
-                        )}
-                      </div>
+                      <MatchScoreBadge
+                        score={rc.fit_score}
+                        strengths={rc.fit_strengths}
+                        gaps={rc.fit_gaps}
+                      />
                     </td>
 
                     {/* 7. Phone */}

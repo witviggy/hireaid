@@ -427,7 +427,92 @@ SANDBOX_CANDIDATES: list[dict[str, Any]] = [
         "phone_number": "+16175558102",
         "linkedin_url": "https://linkedin.com/in/marcus-vance-robotics",
     },
+
+    # -------------------------------------------------------------
+    # 7. MARKETING & GROWTH
+    # -------------------------------------------------------------
+    {
+        "id": "sbx-mkt-01",
+        "full_name": "Sneka Ravi",
+        "job_title": "Junior Marketing Associate",
+        "company": "Sarvam AI",
+        "location": "Bangalore, India",
+        "domain": "marketing",
+        "experience_years": 2,
+        "skills": ["Digital Marketing", "Social Media", "SEO", "MailChimp", "Apollo", "Semrush", "Content Creation", "Lead Generation"],
+        "email": "sneka.ravi@example.com",
+        "phone_number": "+919811100028",
+        "linkedin_url": "https://linkedin.com/in/sneka-ravi-mkt",
+    },
+    {
+        "id": "sbx-mkt-02",
+        "full_name": "Divya Krishnan",
+        "job_title": "Performance Marketing Specialist",
+        "company": "Cult.fit",
+        "location": "Bangalore, India",
+        "domain": "marketing",
+        "experience_years": 4,
+        "skills": ["Google Ads", "Meta Ads", "PPC", "ROAS Optimization", "Google Analytics 4", "Campaign Management", "A/B Testing"],
+        "email": "divya.k@example.com",
+        "phone_number": "+919811100029",
+        "linkedin_url": "https://linkedin.com/in/divya-krishnan-growth",
+    },
+    {
+        "id": "sbx-mkt-03",
+        "full_name": "Rahul Kapoor",
+        "job_title": "Senior SEO & Content Strategist",
+        "company": "Zomato",
+        "location": "Gurgaon, India",
+        "domain": "marketing",
+        "experience_years": 5,
+        "skills": ["Technical SEO", "Ahrefs", "Semrush", "Keyword Research", "Content Strategy", "Link Building", "Organic Growth"],
+        "email": "rahul.kapoor@example.com",
+        "phone_number": "+919811100030",
+        "linkedin_url": "https://linkedin.com/in/rahul-kapoor-seo",
+    },
+    {
+        "id": "sbx-mkt-04",
+        "full_name": "Pooja Chawla",
+        "job_title": "Growth Marketing & CRM Lead",
+        "company": "CleverTap",
+        "location": "Mumbai, India",
+        "domain": "marketing",
+        "experience_years": 6,
+        "skills": ["HubSpot", "Zoho CRM", "MoEngage", "Email Marketing", "User Retention", "Funnel Optimization", "SQL"],
+        "email": "pooja.chawla@example.com",
+        "phone_number": "+919811100031",
+        "linkedin_url": "https://linkedin.com/in/pooja-chawla-crm",
+    },
+    {
+        "id": "sbx-mkt-05",
+        "full_name": "Amitava Roy",
+        "job_title": "Brand & Social Media Manager",
+        "company": "Swiggy",
+        "location": "Bangalore, India",
+        "domain": "marketing",
+        "experience_years": 3,
+        "skills": ["Social Media Strategy", "LinkedIn Marketing", "Video Marketing", "Copywriting", "Influencer Outreach", "Canva"],
+        "email": "amitava.roy@example.com",
+        "phone_number": "+919811100032",
+        "linkedin_url": "https://linkedin.com/in/amitava-roy-social",
+    },
 ]
+
+GENERIC_STOPWORDS = {
+    "engineer", "developer", "specialist", "lead", "senior", "junior", "associate",
+    "intern", "manager", "staff", "principal", "head", "director", "vp", "role",
+    "position", "opportunity", "the", "and", "for", "in", "at", "to", "a", "an",
+    "of", "with", "experienced", "proficient", "level", "mid", "entry", "practitioner"
+}
+
+DOMAIN_KEYWORDS: dict[str, set[str]] = {
+    "ai": {"ai", "ml", "machine", "learning", "data", "scientist", "nlp", "vision", "deep", "llm", "rag", "pytorch", "tensorflow", "transformer", "genai", "prompt", "langchain", "langgraph", "agents", "vllm", "huggingface"},
+    "software": {"software", "backend", "frontend", "fullstack", "devops", "sre", "web", "api", "react", "golang", "go", "node", "python", "java", "microservices", "kubernetes", "docker", "postgres"},
+    "hardware": {"hardware", "embedded", "firmware", "vlsi", "asic", "fpga", "iot", "robotics", "rtos", "verilog", "vhdl", "pcb", "c++", "c", "microcontrollers", "arm"},
+    "it": {"cloud", "security", "network", "system", "infrastructure", "devsecops", "soc", "admin", "aws", "azure", "cisco", "cybersecurity", "siem", "splunk"},
+    "blockchain": {"blockchain", "web3", "solidity", "smart", "contract", "crypto", "defi", "rust", "solana", "ethereum", "hardhat"},
+    "marketing": {"marketing", "seo", "sem", "social", "media", "content", "growth", "campaign", "copywriter", "ppc", "brand", "email", "mailchimp", "semrush", "hubspot", "crm", "retention"},
+}
 
 
 def _tokenize(text: str) -> set[str]:
@@ -442,60 +527,76 @@ async def search_sandbox_candidates(
     target_company: Optional[str] = None,
     limit: int = 10,
 ) -> list[dict[str, Any]]:
-    """Search the sandbox dataset matching role parameters.
+    """Search the sandbox dataset matching role parameters with strict relevance filtering.
 
-    Ranks candidates by query relevance (title keywords, skill overlap,
-    domain, and location), returning the top N candidates formatted as Person dicts.
+    Guarantees:
+    - NO random fetches: candidates must match the role title keywords or required skills.
+    - Domain alignment: detects role domain (AI, Marketing, Software, etc.) and prioritizes matching candidates.
+    - Discards irrelevant candidates rather than padding the result set.
     """
-    title_tokens = _tokenize(job_title or "")
+    raw_title_tokens = _tokenize(job_title or "")
+    core_title_tokens = raw_title_tokens - GENERIC_STOPWORDS
     skills_tokens = _tokenize(required_skills or "")
     loc_tokens = _tokenize(location or "")
     comp_tokens = _tokenize(target_company or "")
 
+    # Detect target role domain(s)
+    role_domains: set[str] = set()
+    all_query_tokens = core_title_tokens.union(skills_tokens)
+    for domain, kws in DOMAIN_KEYWORDS.items():
+        if all_query_tokens.intersection(kws):
+            role_domains.add(domain)
+
     scored: list[tuple[float, dict[str, Any]]] = []
 
     for c in SANDBOX_CANDIDATES:
+        c_raw_title = _tokenize(c["job_title"])
+        c_core_title = c_raw_title - GENERIC_STOPWORDS
+        c_skills = _tokenize(" ".join(c["skills"]))
+        c_loc = _tokenize(c["location"])
+        c_comp = _tokenize(c["company"])
+        c_domain = c.get("domain", "")
+
+        title_matches = core_title_tokens.intersection(c_core_title)
+        skill_matches = skills_tokens.intersection(c_skills)
+
+        # STRICT GATE: Must have either a non-generic title match or a direct skill match
+        if not title_matches and not skill_matches:
+            # If candidate domain strongly matches detected domain, check if raw title matches
+            domain_match = c_domain in role_domains
+            raw_title_matches = raw_title_tokens.intersection(c_raw_title) - {"the", "and", "for", "in", "at", "to", "a", "an"}
+            if not (domain_match and raw_title_matches):
+                continue
+
         score = 0.0
-        c_title_tokens = _tokenize(c["job_title"])
-        c_skills_tokens = _tokenize(" ".join(c["skills"]))
-        c_loc_tokens = _tokenize(c["location"])
-        c_comp_tokens = _tokenize(c["company"])
-        c_domain = c["domain"]
 
-        # Title keyword match
-        title_matches = title_tokens.intersection(c_title_tokens)
-        score += len(title_matches) * 5.0
+        # Core title keyword matches (heavily weighted)
+        score += len(title_matches) * 10.0
 
-        # Required skills match
-        skill_matches = skills_tokens.intersection(c_skills_tokens)
-        score += len(skill_matches) * 4.0
+        # Required / preferred skill matches (heavily weighted)
+        score += len(skill_matches) * 6.0
 
-        # Domain keywords match in title or skills
-        domain_keywords = {
-            "software": {"software", "backend", "frontend", "fullstack", "devops", "sre", "engineer", "developer"},
-            "hardware": {"hardware", "embedded", "firmware", "vlsi", "asic", "fpga", "iot", "robotics", "rtos"},
-            "it": {"cloud", "security", "network", "system", "infrastructure", "devsecops", "soc", "admin"},
-            "ai": {"ai", "ml", "machine", "learning", "data", "scientist", "nlp", "vision", "deep", "llm", "rag"},
-            "blockchain": {"blockchain", "web3", "solidity", "smart", "contract", "crypto", "defi", "rust", "solana"},
-        }
-        for kw in title_tokens.union(skills_tokens):
-            if kw in domain_keywords.get(c_domain, set()):
-                score += 3.0
+        # Domain alignment
+        if role_domains:
+            if c_domain in role_domains:
+                score += 8.0
+            elif not skill_matches and len(title_matches) < 2:
+                # Disqualify cross-domain candidates with no direct skill overlap
+                continue
 
-        # Location match
+        # Location affinity
         if loc_tokens:
-            loc_matches = loc_tokens.intersection(c_loc_tokens)
+            loc_matches = loc_tokens.intersection(c_loc)
             score += len(loc_matches) * 2.0
 
-        # Company match
+        # Company affinity
         if comp_tokens:
-            comp_matches = comp_tokens.intersection(c_comp_tokens)
-            score += len(comp_matches) * 3.0
+            comp_matches = comp_tokens.intersection(c_comp)
+            score += len(comp_matches) * 4.0
 
-        # Small base score for all candidates so limit is always filled gracefully
-        score += 0.5
-
-        scored.append((score, c))
+        # Require a minimum score threshold of 6.0 to prevent loose/random matches
+        if score >= 6.0:
+            scored.append((score, c))
 
     # Sort descending by match score
     scored.sort(key=lambda item: item[0], reverse=True)
