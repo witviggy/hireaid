@@ -289,12 +289,17 @@ async def test_stage_call_script(
     client = HunarClient()
     request_id = f"test-{role.id[:8]}-{stage.id[:4]}-{uuid.uuid4().hex[:8]}"
     org_settings = get_or_create_global_settings(db)
+    custom_data = {
+        "candidate_name": payload.callee_name,
+        "company_name": org_settings.company_name,
+        "candidate_memory": f"Stage test call for {stage.name}. Verify competencies for this round.",
+    }
     try:
         hunar_call = await client.create_call(
             agent_id=script.hunar_agent_id,
             callee_name=payload.callee_name,
             mobile_number=payload.mobile_number,
-            custom_data={"candidate_name": payload.callee_name, "company_name": org_settings.company_name},
+            custom_data=custom_data,
             request_id=request_id,
         )
     except HunarAPIError as exc:
@@ -310,7 +315,7 @@ async def test_stage_call_script(
         agent_id=script.hunar_agent_id,
         request_id=request_id,
         status=hunar_call.get("status", "NOT_STARTED"),
-        custom_data={"candidate_name": payload.callee_name, "company_name": org_settings.company_name},
+        custom_data=custom_data,
     )
     db.add(call)
     db.commit()
