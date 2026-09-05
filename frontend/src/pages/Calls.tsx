@@ -279,7 +279,6 @@ export default function Calls() {
               <th className="px-4 py-3 font-medium">Duration</th>
               <th className="px-4 py-3 font-medium">Status &amp; Override</th>
               <th className="px-4 py-3 font-medium">AI Screening</th>
-              <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -426,15 +425,12 @@ export default function Calls() {
                       <span className="text-xs text-muted-foreground dark:text-slate-400">—</span>
                     )}
                   </td>
-
-                  {/* Actions */}
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()} />
                 </tr>
               );
             })}
             {pageRows.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-sm text-muted-foreground dark:text-slate-400">
+                <td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground dark:text-slate-400">
                   No call records match your filters.
                 </td>
               </tr>

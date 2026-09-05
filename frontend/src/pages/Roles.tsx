@@ -195,7 +195,6 @@ export default function Roles() {
               <th className="px-4 py-3 font-medium">Seniority</th>
               <th className="px-4 py-3 font-medium">Location</th>
               <th className="px-4 py-3 font-medium">Created</th>
-              <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -246,12 +245,11 @@ export default function Roles() {
                 <td className="px-4 py-3 text-muted-foreground dark:text-slate-400">{role.seniority || "—"}</td>
                 <td className="px-4 py-3 text-muted-foreground dark:text-slate-400">{role.location_normalized || role.location || "—"}</td>
                 <td className="px-4 py-3 text-muted-foreground dark:text-slate-400">{new Date(role.created_at).toLocaleDateString()}</td>
-                <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()} />
               </tr>
             ))}
             {pageRows.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground dark:text-slate-400">
+                <td colSpan={7} className="px-4 py-10 text-center text-sm text-muted-foreground dark:text-slate-400">
                   No roles match your filters.
                 </td>
               </tr>

@@ -285,7 +285,6 @@ export default function Candidates() {
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Fit Score</th>
               <th className="px-4 py-3 font-medium">Phone</th>
-              <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -355,13 +354,12 @@ export default function Candidates() {
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground dark:text-slate-400">
                     {c.phone_number}
                   </td>
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()} />
                 </tr>
               );
             })}
             {pageRows.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground dark:text-slate-400">
+                <td colSpan={7} className="px-4 py-10 text-center text-sm text-muted-foreground dark:text-slate-400">
                   No candidates match your filters.
                 </td>
               </tr>
