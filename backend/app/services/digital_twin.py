@@ -231,9 +231,6 @@ async def simulate_digital_twin_dialogue(
 
     # Alternate turns
     for turn_idx in range(1, max_turns):
-        # Even index => Candidate turn
-        # Odd index => Agent turn
-
         # 1. Candidate's turn to reply to Agent's last statement
         candidate_messages = [
             {"role": "system", "content": candidate_system_prompt},
@@ -242,13 +239,15 @@ async def simulate_digital_twin_dialogue(
             role_tag = "user" if t["speaker"] == "AGENT" else "assistant"
             candidate_messages.append({"role": role_tag, "content": t["text"]})
 
-        candidate_reply = await chat_messages(candidate_messages, temperature=0.4)
+        candidate_reply = await chat_messages(candidate_messages, temperature=0.4, max_tokens=1024)
+        if not candidate_reply or not candidate_reply.strip():
+            candidate_reply = "I understand. I think that clarifies what I needed to know, thank you."
         dialogue.append({"speaker": "CANDIDATE", "text": candidate_reply})
 
-        # Check for natural end of conversation
+        # Check for natural end of conversation from candidate
         lower_reply = candidate_reply.lower()
-        if "bye" in lower_reply or "call me back" in lower_reply or "goodbye" in lower_reply:
-            if turn_idx >= 3:
+        if any(term in lower_reply for term in ["bye", "goodbye", "call me back", "not interested", "stop here", "have a good day"]):
+            if turn_idx >= 2:
                 break
 
         # 2. Agent's turn to respond to Candidate
@@ -259,11 +258,38 @@ async def simulate_digital_twin_dialogue(
             role_tag = "user" if t["speaker"] == "CANDIDATE" else "assistant"
             agent_messages.append({"role": role_tag, "content": t["text"]})
 
-        agent_reply = await chat_messages(agent_messages, temperature=0.2)
+        agent_reply = await chat_messages(agent_messages, temperature=0.2, max_tokens=1024)
+        
+        # Robust fallback if model produces empty content due to prompt constraints or token limits
+        if not agent_reply or not agent_reply.strip():
+            agent_reply = (
+                "Thank you for sharing that with me. Based on our requirements and compensation parameters, "
+                "it appears we may not be aligned for this position at this time. I appreciate your time and wish you the best in your search."
+            )
+            dialogue.append({"speaker": "AGENT", "text": agent_reply})
+            # If agent fast-exited on a dealbreaker or failed to produce, gracefully stop the simulation
+            break
+
         dialogue.append({"speaker": "AGENT", "text": agent_reply})
 
+        # Check if Agent initiated a call closing or Dealbreaker Fast-Exit
         lower_agent = agent_reply.lower()
-        if "thank you for your time" in lower_agent or "goodbye" in lower_agent or "have a great day" in lower_agent:
+        wrap_up_signals = [
+            "thank you for your time",
+            "goodbye",
+            "have a great day",
+            "have a good day",
+            "wish you the best",
+            "wish you all the best",
+            "end our conversation",
+            "end this call",
+            "conclude our",
+            "not aligned at this time",
+            "won't be able to move forward",
+            "will not be moving forward",
+            "best of luck",
+        ]
+        if any(signal in lower_agent for signal in wrap_up_signals):
             break
 
     return dialogue

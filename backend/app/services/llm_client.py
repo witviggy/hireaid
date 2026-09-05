@@ -90,7 +90,7 @@ async def chat_json(system_prompt: str, user_prompt: str, max_tokens: int = 8192
     return _extract_json(content)
 
 
-async def chat_messages(messages: list[dict[str, str]], temperature: float = 0.3, max_tokens: int = 150) -> str:
+async def chat_messages(messages: list[dict[str, str]], temperature: float = 0.3, max_tokens: int = 1024) -> str:
     """Multi-turn text generation via Groq chat completions."""
     if not settings.groq_api_key:
         raise LLMError("GROQ_API_KEY is not configured")
@@ -102,10 +102,20 @@ async def chat_messages(messages: list[dict[str, str]], temperature: float = 0.3
         "max_tokens": max_tokens,
     }
     data = await _post_groq(payload)
-    return data["choices"][0]["message"]["content"].strip()
+    choice = data.get("choices", [{}])[0]
+    msg = choice.get("message", {})
+    content = msg.get("content") or ""
+    content = content.strip()
+
+    # Clean any internal reasoning tags if emitted
+    if "<think>" in content and "</think>" in content:
+        import re
+        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+
+    return content
 
 
-async def chat_json_messages(messages: list[dict[str, str]], temperature: float = 0.1, max_tokens: int = 500) -> Any:
+async def chat_json_messages(messages: list[dict[str, str]], temperature: float = 0.1, max_tokens: int = 2048) -> Any:
     """Multi-turn JSON response via Groq chat completions."""
     if not settings.groq_api_key:
         raise LLMError("GROQ_API_KEY is not configured")
@@ -118,7 +128,10 @@ async def chat_json_messages(messages: list[dict[str, str]], temperature: float 
         "response_format": {"type": "json_object"},
     }
     data = await _post_groq(payload)
-    content = data["choices"][0]["message"]["content"]
+    choice = data.get("choices", [{}])[0]
+    msg = choice.get("message", {})
+    content = msg.get("content") or "{}"
     return _extract_json(content)
+
 
 

@@ -801,8 +801,10 @@ export default function DigitalTwinLab() {
                 </div>
 
                 <div className="space-y-3.5 max-h-[500px] overflow-y-auto pr-2">
-                  {simulationResult.turns.map((turn, idx) => {
-                    const isAgent = turn.speaker === "AGENT";
+                  {simulationResult.turns
+                    .filter((turn) => turn.text && turn.text.trim())
+                    .map((turn, idx) => {
+                      const isAgent = turn.speaker === "AGENT";
                     return (
                       <div
                         key={idx}
@@ -1432,8 +1434,10 @@ export default function DigitalTwinLab() {
                               </div>
                             ) : (
                               <div className="space-y-3.5 max-h-[500px] overflow-y-auto pr-2">
-                                {turns.map((turn, idx) => {
-                                  const isAgent = turn.speaker === "AGENT";
+                                {turns
+                                  .filter((turn) => turn.text && turn.text.trim())
+                                  .map((turn, idx) => {
+                                    const isAgent = turn.speaker === "AGENT";
                                   return (
                                     <div
                                       key={idx}
