@@ -125,8 +125,14 @@ async def _schedule_retry_or_mark_unreachable(
     db: Session, call: models.Call, role_candidate: models.RoleCandidate
 ) -> None:
     settings_row = get_or_create_global_settings(db)
-    if not settings_row.retry_enabled or call.attempt_number > settings_row.max_retries:
+    stage_attempts = (
+        db.query(models.Call)
+        .filter(models.Call.role_candidate_id == role_candidate.id, models.Call.stage_id == call.stage_id)
+        .count()
+    )
+    if not settings_row.retry_enabled or call.attempt_number >= 3 or stage_attempts >= 3:
         role_candidate.status = models.PipelineStatus.UNREACHABLE
+        db.add(role_candidate)
         return
     scheduled_at = datetime.now(timezone.utc) + timedelta(minutes=settings_row.retry_delay_minutes)
     retry = models.CallRetryQueue(

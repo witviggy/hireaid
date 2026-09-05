@@ -487,6 +487,23 @@ async def queue_for_call(role_id: str, payload: schemas.QueueForCallRequest, db:
         if not rc.candidate.phone_number:
             continue
 
+        # Smart Retry Limit Guardrail: if 3 attempts have been made without a completed call, block further automated re-dials
+        stage_attempts = (
+            db.query(models.Call)
+            .filter(models.Call.role_candidate_id == rc.id, models.Call.stage_id == rc.current_stage_id)
+            .count()
+        )
+        latest_call = (
+            db.query(models.Call)
+            .filter(models.Call.role_candidate_id == rc.id, models.Call.stage_id == rc.current_stage_id)
+            .order_by(models.Call.created_at.desc())
+            .first()
+        )
+        if stage_attempts >= 3 and latest_call and latest_call.status != "COMPLETED":
+            rc.status = models.PipelineStatus.UNREACHABLE
+            db.add(rc)
+            continue
+
         # Resolve agent from candidate's current stage script, falling back to role script
         target_agent_id = None
         if rc.current_stage_id:

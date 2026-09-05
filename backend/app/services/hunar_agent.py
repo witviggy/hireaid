@@ -170,8 +170,39 @@ def assemble_agent_prompt(
     role: models.Role, script: models.CallScript, stage: Optional[models.RoleStage] = None
 ) -> str:
     stage_header = f" - {stage.name}" if stage else ""
+    identity_directive = (
+        "CANDIDATE IDENTITY DIRECTIVE (IMMUTABLE RULE):\n"
+        "The candidate being interviewed is strictly {candidate_name}.\n"
+        "Address them ONLY as {candidate_name}. NEVER call them by any other name under any circumstances (such as Karen or Alex).\n"
+        "You are {persona_name}, an AI recruiter calling on behalf of {company_name}."
+    )
+
+    common_memory_architecture = (
+        "COMMON WORKING MEMORY STATE ARCHITECTURE (FACT SLOTS ONLY — ENOUGH INFO ALONE, NO FULL ANSWERS):\n"
+        "Maintain and update this internal memory state at every turn of the conversation:\n"
+        "{\n"
+        '  "candidate_name": "{candidate_name}",\n'
+        '  "current_salary": <concise extracted figure, e.g. "6 LPA">,\n'
+        '  "expected_salary": <concise extracted figure, e.g. "10 LPA">,\n'
+        '  "notice_period": <concise extracted figure, e.g. "10 days">,\n'
+        '  "open_to_relocation": <"Yes" or "No">,\n'
+        '  "verified_tools_and_skills": [<list of atomic tool tags, e.g. "SEO", "GEO", "GA4", "SEMrush", "MailChimp", "LinkedIn", "Apollo", "Crunchbase">],\n'
+        '  "topics_completed": [<list of completed milestone topics>]\n'
+        "}\n\n"
+        "MANDATORY WORKING MEMORY RULES:\n"
+        "1. Enough Info Alone (Compact State): Store ONLY atomic facts, numbers, and tool tags. NEVER store or re-process verbose verbatim answer paragraphs.\n"
+        "2. Compound Answer Extraction: If candidate states multiple facts in one response (e.g. 'Current is 6 lakhs and expected is 10 lakhs'), immediately mark BOTH 'current_salary' and 'expected_salary' as VERIFIED in memory. NEVER re-ask for current salary when it was already stated.\n"
+        "3. Strict Pre-Turn Memory Lookup: Before asking ANY question, check your Common Working Memory State:\n"
+        "   - If 'current_salary' is filled -> DO NOT ASK FOR CURRENT SALARY AGAIN.\n"
+        "   - If 'open_to_relocation' is filled -> DO NOT ASK ABOUT RELOCATION AGAIN.\n"
+        "   - If tools (e.g. GA4, SEMrush, SEO) are in 'verified_tools_and_skills' -> DO NOT ASK 'Do you have experience with SEO or Google Analytics?'. Treat them as already verified!\n"
+        "4. Anti-Recap Closing: At the end of the call, NEVER read the Common Working Memory State aloud as an itemized laundry list. Deliver ONLY a brief polite closing statement (thank you, 2-day timeline, warm goodbye in under 25 words)."
+    )
+
     parts = [
         f"You are an AI recruiting assistant conducting a live phone screening interview for the role: {role.title}{stage_header}.",
+        identity_directive,
+        common_memory_architecture,
         TONE_INSTRUCTIONS.get(script.tone, TONE_INSTRUCTIONS["CONVERSATIONAL"]),
         PACE_INSTRUCTIONS.get(script.pace, PACE_INSTRUCTIONS["STANDARD"]),
     ]

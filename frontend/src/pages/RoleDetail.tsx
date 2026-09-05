@@ -735,6 +735,13 @@ function MatchScoreBadge({
   );
 }
 
+interface RedialConfirmTarget {
+  rcId: string;
+  candidateName: string;
+  phone: string;
+  attemptNumber: number;
+}
+
 function PipelineSection({
   roleId,
   pipeline,
@@ -755,6 +762,7 @@ function PipelineSection({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [actionInProgress, setActionInProgress] = useState(false);
   const [advancingRcId, setAdvancingRcId] = useState<string | null>(null);
+  const [redialConfirmTarget, setRedialConfirmTarget] = useState<RedialConfirmTarget | null>(null);
   const [ranking, setRanking] = useState(false);
 
   async function handleRankCandidates() {
@@ -1063,6 +1071,9 @@ function PipelineSection({
                 const hasEvidence = (rc.fit_strengths?.length || 0) > 0 || (rc.fit_gaps?.length || 0) > 0;
                 const hasPhone = Boolean(rc.candidate.phone_number);
 
+                const attemptCount = stageCalls.length;
+                const isMaxRetriesReached = (attemptCount >= 3 || rc.status === "UNREACHABLE") && latestStageCall?.status !== "COMPLETED";
+
                 const currentStageIndex = stages.findIndex((s) => s.id === rc.current_stage_id);
                 const nextStage =
                   currentStageIndex >= 0 && currentStageIndex + 1 < stages.length
@@ -1151,6 +1162,8 @@ function PipelineSection({
                           <option value="SCREENED">Screened</option>
                           <option value="SHORTLISTED">Shortlisted</option>
                           <option value="REVIEW_NEEDED">Review Needed</option>
+                          <option value="RETRY_PENDING">Retry Pending</option>
+                          <option value="UNREACHABLE">Unreachable</option>
                           <option value="REJECTED">Rejected</option>
                           <option value="ARCHIVED">Archived</option>
                         </select>
@@ -1181,19 +1194,24 @@ function PipelineSection({
                     {/* 8. Call Status */}
                     <td className="px-4 py-3 align-middle text-left text-xs text-muted-foreground dark:text-slate-400 whitespace-nowrap">
                       {latestCall ? (
-                        <div className="inline-flex items-center gap-1.5">
-                          <span
-                            className={cn(
-                              "h-1.5 w-1.5 rounded-full shrink-0",
-                              latestCall.status === "COMPLETED"
-                                ? "bg-emerald-500"
-                                : latestCall.status === "NO_ANSWER" || latestCall.status === "CALLING"
-                                ? "bg-amber-500"
-                                : "bg-slate-400"
-                            )}
-                          />
-                          <span className="font-medium text-slate-700 dark:text-slate-300">
-                            {formatStatus(latestCall.status)}
+                        <div className="flex flex-col gap-0.5">
+                          <div className="inline-flex items-center gap-1.5">
+                            <span
+                              className={cn(
+                                "h-1.5 w-1.5 rounded-full shrink-0",
+                                latestCall.status === "COMPLETED"
+                                  ? "bg-emerald-500"
+                                  : latestCall.status === "NO_ANSWER" || latestCall.status === "CALLING"
+                                  ? "bg-amber-500"
+                                  : "bg-slate-400"
+                              )}
+                            />
+                            <span className="font-medium text-slate-700 dark:text-slate-300">
+                              {formatStatus(latestCall.status)}
+                            </span>
+                          </div>
+                          <span className="text-[11px] font-mono text-muted-foreground/80 dark:text-slate-400">
+                            Attempt {attemptCount}/3
                           </span>
                         </div>
                       ) : (
@@ -1281,7 +1299,19 @@ function PipelineSection({
                                 <span>Advance (R{nextStage.round_number})</span>
                               </Button>
                             )}
-                            {!latestStageCall ? (
+                            {isMaxRetriesReached ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleUpdateStatus([rc.id], "ARCHIVED")}
+                                disabled={actionInProgress}
+                                className="h-7 text-xs font-medium text-amber-800 border-amber-300 bg-amber-50/60 hover:bg-amber-100 hover:text-amber-900 dark:text-amber-300 dark:border-amber-800 dark:bg-amber-950/40"
+                                title="3 unanswered call attempts reached. Click to archive candidate"
+                              >
+                                <Archive className="mr-1 h-3.5 w-3.5" />
+                                <span>Archive (3/3 Limit)</span>
+                              </Button>
+                            ) : !latestStageCall ? (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -1297,7 +1327,14 @@ function PipelineSection({
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => handleQueue([rc.id])}
+                                onClick={() =>
+                                  setRedialConfirmTarget({
+                                    rcId: rc.id,
+                                    candidateName: rc.candidate.full_name,
+                                    phone: rc.candidate.phone_number,
+                                    attemptNumber: attemptCount + 1,
+                                  })
+                                }
                                 disabled={actionInProgress || !hasPhone}
                                 className={cn(
                                   "h-7 text-xs font-medium",
@@ -1305,7 +1342,7 @@ function PipelineSection({
                                     ? "text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40"
                                     : ""
                                 )}
-                                title="Retry this round afresh (without prior call memory)"
+                                title={`Re-dial candidate (Attempt ${attemptCount + 1}/3)`}
                               >
                                 <RotateCcw className="mr-1 h-3.5 w-3.5" />
                                 <span>Retry</span>
@@ -1353,6 +1390,64 @@ function PipelineSection({
           </table>
         </div>
       </div>
+
+      {/* Accidental Call Protection: Re-dial Confirmation Modal */}
+      {redialConfirmTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 p-5 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
+                <PhoneCall className="h-5 w-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">
+                  Confirm Re-dial (Attempt {redialConfirmTarget.attemptNumber}/3)
+                </h3>
+                <p className="text-xs text-muted-foreground dark:text-slate-400 leading-relaxed">
+                  Re-dial <strong className="text-slate-900 dark:text-slate-100">{redialConfirmTarget.candidateName}</strong>?
+                  The AI voice recruiter will call <span className="font-mono text-slate-800 dark:text-slate-200 font-semibold">{redialConfirmTarget.phone}</span>.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-slate-50 dark:bg-zinc-950/60 border border-slate-100 dark:border-zinc-800 p-3 text-xs text-slate-600 dark:text-slate-400 space-y-1">
+              <div className="flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300">
+                <Info className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                <span>Accidental Call Protection</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-normal">
+                This will initiate an outbound telephony call via Plivo/carrier and incur telecom charges. Click Cancel to abort.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setRedialConfirmTarget(null)}
+                disabled={actionInProgress}
+                className="h-8 text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                variant="default"
+                onClick={async () => {
+                  const id = redialConfirmTarget.rcId;
+                  setRedialConfirmTarget(null);
+                  await handleQueue([id]);
+                }}
+                disabled={actionInProgress}
+                className="h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white font-medium"
+              >
+                <PhoneCall className="mr-1.5 h-3.5 w-3.5" />
+                Confirm &amp; Re-dial
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
   </div>
 );
 }

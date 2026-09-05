@@ -44,8 +44,8 @@ def _extract_json(text: str) -> Any:
 async def _post_groq(payload: dict[str, Any]) -> dict[str, Any]:
     """Helper to send request to Groq with rate-limit backoff and valid fallback models."""
     primary_model = payload.get("model") or settings.groq_model
-    # Models available on this Groq account in priority order (120B parameter flagship first)
-    candidate_models = [primary_model, "openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
+    # Models available on this Groq account in priority order (Qwen 3.8-27B flagship first)
+    candidate_models = [primary_model, "qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]
     seen: set = set()
     models_chain = [m for m in candidate_models if m and not (m in seen or seen.add(m))]
 
@@ -87,7 +87,7 @@ async def _post_groq(payload: dict[str, Any]) -> dict[str, Any]:
     raise LLMError("Groq API request failed without response")
 
 
-async def chat_json(system_prompt: str, user_prompt: str, max_tokens: int = 8192) -> Any:
+async def chat_json(system_prompt: str, user_prompt: str, max_tokens: int = 16384) -> Any:
     if not settings.groq_api_key:
         raise LLMError("GROQ_API_KEY is not configured")
 
@@ -106,7 +106,7 @@ async def chat_json(system_prompt: str, user_prompt: str, max_tokens: int = 8192
     return _extract_json(content)
 
 
-async def chat_messages(messages: list[dict[str, str]], temperature: float = 0.3, max_tokens: int = 1024) -> str:
+async def chat_messages(messages: list[dict[str, str]], temperature: float = 0.3, max_tokens: int = 4096) -> str:
     """Multi-turn text generation via Groq chat completions."""
     if not settings.groq_api_key:
         raise LLMError("GROQ_API_KEY is not configured")
@@ -135,7 +135,7 @@ async def chat_messages(messages: list[dict[str, str]], temperature: float = 0.3
     return content
 
 
-async def chat_json_messages(messages: list[dict[str, str]], temperature: float = 0.1, max_tokens: int = 2048) -> Any:
+async def chat_json_messages(messages: list[dict[str, str]], temperature: float = 0.1, max_tokens: int = 16384) -> Any:
     """Multi-turn JSON response via Groq chat completions."""
     if not settings.groq_api_key:
         raise LLMError("GROQ_API_KEY is not configured")

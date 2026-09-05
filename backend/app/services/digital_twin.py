@@ -9,7 +9,7 @@ from typing import Any, Optional
 from sqlalchemy.orm import Session
 
 from .. import models
-from .llm_client import LLMError, chat_json_messages, chat_messages
+from .llm_client import LLMError, chat_json, chat_json_messages, chat_messages
 from .hunar_agent import assemble_agent_prompt
 
 DEFAULT_PERSONAS = [
@@ -247,8 +247,63 @@ async def simulate_digital_twin_dialogue(
     # ── Shared template variables ──────────────────────────────────────────────
     company_name = (global_settings.company_name if global_settings else None) or "HireAId"
     ai_name = (script.ai_name or "").strip() or "Alex"
+    candidate_clean_name = persona.name.split("(")[0].strip() or "Candidate"
 
-    def _render(text: str, candidate_placeholder: str = "there") -> str:
+    # ── Common Working Memory State ────────────────────────────────────────────
+    # Filled with ENOUGH INFO ALONE (concise facts, numbers, tools), NOT full answers.
+    common_memory_state: dict[str, Any] = {
+        "candidate_name": candidate_clean_name,
+        "current_salary": None,
+        "expected_salary": None,
+        "notice_period": None,
+        "open_to_relocation": None,
+        "verified_tools_and_skills": [],
+        "topics_completed": [],
+    }
+
+    async def _update_common_memory(user_reply: str, prior_agent_text: str) -> None:
+        """Extract concise factual slots into the common working memory state (enough info alone)."""
+        prompt = (
+            "You are an information extraction assistant. Given the recruiter question and candidate reply, "
+            "extract ONLY newly stated factual data to update the candidate's interview working memory.\n"
+            "Store ENOUGH INFO ALONE (concise facts, numbers, tools), NEVER full verbose sentences.\n"
+            "Respond ONLY with a JSON object matching this schema:\n"
+            "{\n"
+            '  "current_salary": <concise string like "6 LPA" or null if not stated>,\n'
+            '  "expected_salary": <concise string like "10 LPA" or null if not stated>,\n'
+            '  "notice_period": <concise string like "10 days" or null if not stated>,\n'
+            '  "open_to_relocation": <true | false | null>,\n'
+            '  "new_tools_or_skills": [<list of specific tools/skills stated, e.g. "SEO", "GA4", "MailChimp">],\n'
+            '  "topic_completed": <short name of topic answered, e.g. "SALARY", "NOTICE_PERIOD", "SEO_ANALYTICS" or null>\n'
+            "}\n"
+            f"Recruiter Question: {prior_agent_text}\n"
+            f"Candidate Reply: {user_reply}"
+        )
+        try:
+            extracted = await chat_json(
+                system_prompt="Extract concise factual key-value slots. Never include full verbose answers.",
+                user_prompt=prompt,
+                max_tokens=1024,
+            )
+            if extracted and isinstance(extracted, dict):
+                if extracted.get("current_salary"):
+                    common_memory_state["current_salary"] = str(extracted["current_salary"]).strip()
+                if extracted.get("expected_salary"):
+                    common_memory_state["expected_salary"] = str(extracted["expected_salary"]).strip()
+                if extracted.get("notice_period"):
+                    common_memory_state["notice_period"] = str(extracted["notice_period"]).strip()
+                if extracted.get("open_to_relocation") is not None:
+                    common_memory_state["open_to_relocation"] = "Yes" if extracted["open_to_relocation"] else "No"
+                for tool in extracted.get("new_tools_or_skills") or []:
+                    if tool and tool not in common_memory_state["verified_tools_and_skills"]:
+                        common_memory_state["verified_tools_and_skills"].append(tool)
+                topic = extracted.get("topic_completed")
+                if topic and topic not in common_memory_state["topics_completed"]:
+                    common_memory_state["topics_completed"].append(topic)
+        except Exception:
+            pass
+
+    def _render(text: str, candidate_placeholder: str = candidate_clean_name) -> str:
         """Render all script template placeholders for simulation context."""
         return (
             text
@@ -271,7 +326,7 @@ async def simulate_digital_twin_dialogue(
         script.closing_interested
         or "Great — based on our conversation I'll be sharing your profile with the team. "
            "You should hear back within 2 business days. Thanks for your time and have a wonderful day!",
-        candidate_placeholder="you",
+        candidate_placeholder=candidate_clean_name,
     )
 
     # ── Dealbreaker signals that indicate agent explicitly ended the call ──────
@@ -339,6 +394,10 @@ async def simulate_digital_twin_dialogue(
         if len(recent_candidate_replies) > 3:
             recent_candidate_replies.pop(0)
 
+        # ── Update Common Working Memory State after candidate turn ─────────────
+        agent_last_text = dialogue[-2]["text"] if len(dialogue) >= 2 else ""
+        await _update_common_memory(candidate_reply, agent_last_text)
+
         # ── Candidate explicit hang-up detection ───────────────────────────────
         lower_cand = candidate_reply.lower().strip()
         is_explicit_hangup = (
@@ -365,20 +424,42 @@ async def simulate_digital_twin_dialogue(
             dialogue.append({"speaker": "AGENT", "text": agent_exit_reply.strip()})
             break
 
+        # ── Build active Common Working Memory injection block ─────────────────
+        memory_lines = [
+            "\n\nCURRENT COMMON WORKING MEMORY STATE (FACT SLOTS ALONE — DO NOT RE-ASK VERIFIED ITEMS):",
+            f"- Candidate Name: {common_memory_state['candidate_name']} [LOCKED - NEVER CALL THEM ANOTHER NAME]",
+        ]
+        if common_memory_state.get("current_salary"):
+            memory_lines.append(f"- Current Salary: {common_memory_state['current_salary']} (VERIFIED - DO NOT ASK FOR CURRENT SALARY AGAIN)")
+        if common_memory_state.get("expected_salary"):
+            memory_lines.append(f"- Expected Salary: {common_memory_state['expected_salary']} (VERIFIED - DO NOT ASK FOR EXPECTED SALARY AGAIN)")
+        if common_memory_state.get("notice_period"):
+            memory_lines.append(f"- Notice Period: {common_memory_state['notice_period']} (VERIFIED - DO NOT ASK NOTICE PERIOD AGAIN)")
+        if common_memory_state.get("open_to_relocation"):
+            memory_lines.append(f"- Relocation: {common_memory_state['open_to_relocation']} (VERIFIED - DO NOT ASK RELOCATION AGAIN)")
+        if common_memory_state.get("verified_tools_and_skills"):
+            tools_tag = ", ".join(common_memory_state["verified_tools_and_skills"])
+            memory_lines.append(f"- Verified Tools & Skills: {tools_tag} (VERIFIED - DO NOT ASK 'Do you have experience with {tools_tag}?')")
+        if common_memory_state.get("topics_completed"):
+            memory_lines.append(f"- Completed Topics: {', '.join(common_memory_state['topics_completed'])}")
+
+        memory_prompt_block = "\n".join(memory_lines)
+
         # ── Agent turn ─────────────────────────────────────────────────────────
         if is_final_round:
             agent_sys = (
-                f"{agent_system_prompt}\n\n"
+                f"{agent_system_prompt}{memory_prompt_block}\n\n"
                 "CRITICAL DIRECTIVE — FINAL TURN (CALL CONCLUDED):\n"
                 "This is the final turn of the screening interview. The interview is now OVER.\n"
                 "- DO NOT ASK ANY QUESTIONS.\n"
                 "- DO NOT end with 'do you have any questions?'.\n"
+                "- DO NOT recite an itemized resume recap or laundry list of what was discussed.\n"
                 f"- Acknowledge the candidate's last answer in 5–8 words.\n"
                 f"- Deliver the closing statement: \"{closing_text}\"\n"
                 "- Conclude with a warm goodbye."
             )
         else:
-            agent_sys = agent_system_prompt
+            agent_sys = f"{agent_system_prompt}{memory_prompt_block}"
 
         agent_reply = await _call_llm(
             _build_messages(agent_sys, "AGENT"),
