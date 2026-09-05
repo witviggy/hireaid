@@ -199,7 +199,7 @@ class RoleStageBase(BaseModel):
 
 
 class RoleStageCreate(RoleStageBase):
-    pass
+    round_number: Optional[int] = None
 
 
 class RoleStageUpdate(BaseModel):
