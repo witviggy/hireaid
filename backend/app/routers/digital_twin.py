@@ -122,6 +122,7 @@ async def simulate_experiment(req: schemas.SimulateRequest, db: Session = Depend
     global_settings = db.query(models.GlobalSettings).first()
 
     # 1. Run dialogue simulation
+    max_turns = max(4, min(req.max_turns or 8, 20))
     try:
         turns = await simulate_digital_twin_dialogue(
             role=role,
@@ -129,7 +130,7 @@ async def simulate_experiment(req: schemas.SimulateRequest, db: Session = Depend
             script=script,
             global_settings=global_settings,
             persona=persona,
-            max_turns=req.max_turns or 6,
+            max_turns=max_turns,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Simulation dialogue failed: {e}")

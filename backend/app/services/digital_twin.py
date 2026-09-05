@@ -201,168 +201,221 @@ async def simulate_digital_twin_dialogue(
     script: models.CallScript,
     global_settings: Optional[models.GlobalSettings],
     persona: models.DigitalTwinPersona,
-    max_turns: int = 6,
+    max_turns: int = 8,
 ) -> list[dict[str, str]]:
-    """Execute a simulated multi-turn phone interview between Agent Prompt and Candidate Persona."""
+    """Execute a simulated multi-turn phone interview between Agent Prompt and Candidate Persona.
+
+    max_turns: total number of full back-and-forth exchanges (each exchange = 1 candidate turn + 1 agent turn).
+    The conversation always starts with the agent's intro (turn 0), then alternates.
+    """
+    import asyncio  # noqa: PLC0415 — local import keeps top-level clean
+
+    _TURN_TIMEOUT = 45  # seconds per LLM call; raises asyncio.TimeoutError on breach
+    _MAX_CONTEXT_HISTORY = 12  # keep last N dialogue entries in message history (prevents context overflow)
+
+    # ── Agent system prompt ────────────────────────────────────────────────────
     agent_system_prompt = assemble_agent_prompt(
         role=role,
         script=script,
         stage=stage,
     ).replace("{candidate_memory}", "Digital Twin Simulation Benchmark - First Round Baseline.")
 
-    # Dynamically contextualize the role-agnostic character persona with the specific role being tested
-    role_context = f"TARGET ROLE CONTEXT:\nYou are participating as a candidate interviewing for the position of '{role.title}'."
-    role_overview = getattr(role, "description", None) or getattr(role, "ai_summary", None) or getattr(role, "jd_raw_text", "")
+    # ── Candidate system prompt ────────────────────────────────────────────────
+    role_context = (
+        f"TARGET ROLE CONTEXT:\n"
+        f"You are participating as a candidate interviewing for the position of '{role.title}'."
+    )
+    role_overview = (
+        (getattr(role, "description", None) or "").strip()
+        or (getattr(role, "ai_summary", None) or "").strip()
+        or (getattr(role, "jd_raw_text", None) or "").strip()
+    )
     if role_overview:
-        role_context += f"\nRole Overview: {role_overview[:250]}."
-    
+        role_context += f"\nRole Overview: {role_overview[:300]}."
+
     candidate_rules = (
         "\n\nGENERAL CONVERSATION RULES:\n"
         "- Never repeat prior responses or stock sentences verbatim; vary your phrasing naturally.\n"
-        "- When the interviewer wraps up the call or says goodbye, respond with only a short, natural parting remark (under 10 words) that fits your character. "
-        "Do NOT ask new questions, do NOT wish the recruiter activities that belong to your own situation (e.g. if you said you were driving, do NOT tell the recruiter to 'drive safe'). "
+        "- When the interviewer wraps up the call or says goodbye, respond with only a short, natural "
+        "parting remark (under 10 words) that fits your character. "
+        "Do NOT ask new questions, do NOT project your own situation onto the recruiter "
+        "(e.g. if you said you were driving, do NOT tell the recruiter to 'drive safe'). "
         "A simple 'Thanks, speak soon!' or 'Appreciate it, bye!' is ideal."
     )
     candidate_system_prompt = f"{role_context}\n\n{persona.system_prompt}{candidate_rules}"
 
-    dialogue: list[dict[str, str]] = []
+    # ── Shared template variables ──────────────────────────────────────────────
+    company_name = (global_settings.company_name if global_settings else None) or "HireAId"
+    ai_name = (script.ai_name or "").strip() or "Alex"
 
-    # Turn 1: Agent speaks first with greeting/intro
-    intro = script.introduction or f"Hi! I'm {script.ai_name or 'Alex'} calling from HireAId regarding the {role.title} position. Do you have a couple of minutes to chat?"
-    intro_rendered = (
-        intro.replace("{candidate_name}", "Candidate")
-        .replace("{persona_name}", script.ai_name or "Alex")
-        .replace("{ai_name}", script.ai_name or "Alex")
-        .replace("{role_title}", role.title)
-        .replace("{company_name}", global_settings.company_name if global_settings else "HireAId")
+    def _render(text: str, candidate_placeholder: str = "there") -> str:
+        """Render all script template placeholders for simulation context."""
+        return (
+            text
+            .replace("{candidate_name}", candidate_placeholder)
+            .replace("{persona_name}", ai_name)
+            .replace("{ai_name}", ai_name)
+            .replace("{role_title}", role.title)
+            .replace("{company_name}", company_name)
+        )
+
+    # ── Opening intro (Turn 0 — Agent speaks first) ───────────────────────────
+    intro_raw = script.introduction or (
+        f"Hi there, this is {ai_name} calling from {company_name} "
+        f"regarding the {role.title} position. Do you have a couple of minutes to chat?"
     )
+    dialogue: list[dict[str, str]] = [{"speaker": "AGENT", "text": _render(intro_raw)}]
 
-    dialogue.append({"speaker": "AGENT", "text": intro_rendered})
-
-    company_name = global_settings.company_name if global_settings else "HireAId"
-    ai_name = script.ai_name or "Alex"
-
-    closing_text = (
+    # ── Closing text (rendered once, reused in final turn) ────────────────────
+    closing_text = _render(
         script.closing_interested
-        or f"Great — based on our conversation I'll be sharing your profile with the team. You should hear back within 2 business days. Thanks for your time and have a wonderful day!"
-    )
-    # Render any template placeholders in the closing so they don't appear as literal text
-    closing_text = (
-        closing_text
-        .replace("{candidate_name}", "you")
-        .replace("{persona_name}", ai_name)
-        .replace("{ai_name}", ai_name)
-        .replace("{role_title}", role.title)
-        .replace("{company_name}", company_name)
+        or "Great — based on our conversation I'll be sharing your profile with the team. "
+           "You should hear back within 2 business days. Thanks for your time and have a wonderful day!",
+        candidate_placeholder="you",
     )
 
-    # Alternate turns
-    for turn_idx in range(1, max_turns):
+    # ── Dealbreaker signals that indicate agent explicitly ended the call ──────
+    dealbreaker_signals = [
+        "wish you the best in your search",
+        "wish you all the best in your search",
+        "we will not be moving forward",
+        "won't be able to move forward with your application",
+        "end our conversation here",
+        "conclude our discussion here",
+        "conclude our call here",
+    ]
+
+    def _build_messages(system: str, for_speaker: str) -> list[dict[str, str]]:
+        """Build a message list from current dialogue, pruned to _MAX_CONTEXT_HISTORY entries,
+        with correct role tags for the speaker perspective."""
+        msgs: list[dict[str, str]] = [{"role": "system", "content": system}]
+        # Prune: keep last N turns to avoid context window overflow
+        history = dialogue[-_MAX_CONTEXT_HISTORY:]
+        for t in history:
+            if for_speaker == "CANDIDATE":
+                role_tag = "user" if t["speaker"] == "AGENT" else "assistant"
+            else:  # AGENT perspective
+                role_tag = "user" if t["speaker"] == "CANDIDATE" else "assistant"
+            msgs.append({"role": role_tag, "content": t["text"]})
+        return msgs
+
+    async def _call_llm(messages: list[dict[str, str]], temperature: float, max_tokens: int) -> str:
+        """Wrap chat_messages with a per-call timeout."""
+        try:
+            return await asyncio.wait_for(
+                chat_messages(messages, temperature=temperature, max_tokens=max_tokens),
+                timeout=_TURN_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            return ""
+
+    # ── Last-N-turns repetition guard ─────────────────────────────────────────
+    recent_candidate_replies: list[str] = []
+
+    # ── Main simulation loop ───────────────────────────────────────────────────
+    # range(max_turns) → exactly max_turns candidate+agent exchanges
+    for turn_idx in range(max_turns):
         is_final_round = (turn_idx == max_turns - 1)
 
-        # 1. Candidate's turn to reply to Agent's last statement
-        candidate_messages = [
-            {"role": "system", "content": candidate_system_prompt},
-        ]
-        for t in dialogue:
-            role_tag = "user" if t["speaker"] == "AGENT" else "assistant"
-            candidate_messages.append({"role": role_tag, "content": t["text"]})
-
-        candidate_reply = await chat_messages(candidate_messages, temperature=0.4, max_tokens=600)
-        if not candidate_reply or not candidate_reply.strip():
-            candidate_reply = "I understand. I think that clarifies what I needed to know, thank you."
-        dialogue.append({"speaker": "CANDIDATE", "text": candidate_reply})
-
-        # Only trigger candidate early termination on explicit hang-up / disconnecting
-        lower_reply = candidate_reply.lower()
-        lower_clean = lower_reply.strip()
-        is_explicit_hangup = (
-            lower_clean.startswith(("bye", "goodbye", "i have to hang up"))
-            or "hanging up now" in lower_clean
-            or "please stop calling" in lower_clean
+        # ── Candidate turn ─────────────────────────────────────────────────────
+        # Repetition guard: if the last 2 replies were identical, inject a nudge
+        rep_guard = ""
+        if len(recent_candidate_replies) >= 2 and recent_candidate_replies[-1] == recent_candidate_replies[-2]:
+            rep_guard = (
+                "\n\nIMPORTANT: Your last two responses were identical. "
+                "You MUST respond differently this time — use a completely new phrasing."
+            )
+        cand_sys = candidate_system_prompt + rep_guard
+        candidate_reply = await _call_llm(
+            _build_messages(cand_sys, "CANDIDATE"),
+            temperature=0.45,
+            max_tokens=200,
         )
-        if is_explicit_hangup and turn_idx >= 2:
-            # Recruiter delivers quick polite exit
-            agent_messages = [
-                {"role": "system", "content": (
-                    f"{agent_system_prompt}\n\n"
-                    f"CRITICAL DIRECTIVE - CALL CONCLUDED:\n"
-                    f"The candidate has hung up or asked to end the call. Deliver a polite, 1-sentence parting acknowledgment wishing them well (under 15 words). DO NOT ask any questions."
-                )},
-            ]
-            for t in dialogue:
-                role_tag = "user" if t["speaker"] == "CANDIDATE" else "assistant"
-                agent_messages.append({"role": role_tag, "content": t["text"]})
-            agent_reply = await chat_messages(agent_messages, temperature=0.2, max_tokens=300)
-            if not agent_reply or not agent_reply.strip():
-                agent_reply = "Understood. Thank you for your time today, and have a great day!"
-            dialogue.append({"speaker": "AGENT", "text": agent_reply})
+        if not candidate_reply or not candidate_reply.strip():
+            candidate_reply = "Okay, thanks for the information."
+        candidate_reply = candidate_reply.strip()
+        dialogue.append({"speaker": "CANDIDATE", "text": candidate_reply})
+        recent_candidate_replies.append(candidate_reply)
+        if len(recent_candidate_replies) > 3:
+            recent_candidate_replies.pop(0)
+
+        # ── Candidate explicit hang-up detection ───────────────────────────────
+        lower_cand = candidate_reply.lower().strip()
+        is_explicit_hangup = (
+            lower_cand.startswith(("bye", "goodbye", "i have to hang up", "gotta go"))
+            or "hanging up now" in lower_cand
+            or "please stop calling" in lower_cand
+        )
+        if is_explicit_hangup and turn_idx >= 1:
+            # Agent delivers brief parting acknowledgment
+            exit_sys = (
+                f"{agent_system_prompt}\n\n"
+                "CRITICAL DIRECTIVE — CALL CONCLUDED:\n"
+                "The candidate has hung up or asked to end the call. "
+                "Deliver a polite, 1-sentence parting acknowledgment wishing them well (under 15 words). "
+                "DO NOT ask any questions."
+            )
+            agent_exit_reply = await _call_llm(
+                _build_messages(exit_sys, "AGENT"),
+                temperature=0.2,
+                max_tokens=80,
+            )
+            if not agent_exit_reply or not agent_exit_reply.strip():
+                agent_exit_reply = "Understood — thank you for your time today, have a great day!"
+            dialogue.append({"speaker": "AGENT", "text": agent_exit_reply.strip()})
             break
 
-        # 2. Agent's turn to respond to Candidate
+        # ── Agent turn ─────────────────────────────────────────────────────────
         if is_final_round:
-            agent_messages = [
-                {"role": "system", "content": (
-                    f"{agent_system_prompt}\n\n"
-                    f"CRITICAL DIRECTIVE - FINAL TURN (CALL CONCLUDED):\n"
-                    f"This is the final turn of the screening interview. The interview is now OVER.\n"
-                    f"- DO NOT ASK ANY QUESTIONS.\n"
-                    f"- DO NOT ASK 'do you have any questions?'.\n"
-                    f"- Acknowledge the candidate's last answer in 5-8 words.\n"
-                    f"- Deliver the closing statement: \"{closing_text}\"\n"
-                    f"- Conclude with \"Have a great day!\""
-                )},
-            ]
+            agent_sys = (
+                f"{agent_system_prompt}\n\n"
+                "CRITICAL DIRECTIVE — FINAL TURN (CALL CONCLUDED):\n"
+                "This is the final turn of the screening interview. The interview is now OVER.\n"
+                "- DO NOT ASK ANY QUESTIONS.\n"
+                "- DO NOT end with 'do you have any questions?'.\n"
+                f"- Acknowledge the candidate's last answer in 5–8 words.\n"
+                f"- Deliver the closing statement: \"{closing_text}\"\n"
+                "- Conclude with a warm goodbye."
+            )
         else:
-            agent_messages = [
-                {"role": "system", "content": agent_system_prompt},
-            ]
+            agent_sys = agent_system_prompt
 
-        for t in dialogue:
-            role_tag = "user" if t["speaker"] == "CANDIDATE" else "assistant"
-            agent_messages.append({"role": role_tag, "content": t["text"]})
+        agent_reply = await _call_llm(
+            _build_messages(agent_sys, "AGENT"),
+            temperature=0.2,
+            max_tokens=200,
+        )
 
-        agent_reply = await chat_messages(agent_messages, temperature=0.2, max_tokens=600)
-        
-        # Robust fallback if model produces empty content due to prompt constraints or token limits
         if not agent_reply or not agent_reply.strip():
-            agent_reply = f"Thank you for sharing that with me. {closing_text}"
+            # Empty reply fallback — close the call gracefully
+            agent_reply = f"Thank you for sharing that. {closing_text}"
             dialogue.append({"speaker": "AGENT", "text": agent_reply})
             call_concluded = True
         else:
+            agent_reply = agent_reply.strip()
             dialogue.append({"speaker": "AGENT", "text": agent_reply})
-
-        # Check if Agent explicitly executed a Dealbreaker Fast-Exit before final round
-        lower_agent = agent_reply.lower()
-        dealbreaker_signals = [
-            "wish you the best in your search",
-            "wish you all the best in your search",
-            "we will not be moving forward",
-            "won't be able to move forward with your application",
-            "end our conversation here",
-            "conclude our discussion here",
-            "conclude our call here",
-        ]
-        call_concluded = is_final_round or any(signal in lower_agent for signal in dealbreaker_signals)
+            lower_agent = agent_reply.lower()
+            call_concluded = is_final_round or any(sig in lower_agent for sig in dealbreaker_signals)
 
         if call_concluded:
-            # Let candidate deliver a final polite parting acknowledgment
-            cand_farewell_msgs = [
-                {"role": "system", "content": (
-                    f"{candidate_system_prompt}\n\n"
-                    f"CRITICAL DIRECTIVE: The recruiter has just concluded the call and said goodbye. "
-                    f"Respond with a brief, polite farewell wishing them well (under 12 words). Do not ask questions."
-                )},
-            ]
-            for t in dialogue:
-                role_tag = "user" if t["speaker"] == "AGENT" else "assistant"
-                cand_farewell_msgs.append({"role": role_tag, "content": t["text"]})
-            cand_farewell = await chat_messages(cand_farewell_msgs, temperature=0.3, max_tokens=250)
+            # Candidate delivers a brief farewell to close naturally
+            farewell_sys = (
+                f"{candidate_system_prompt}\n\n"
+                "CRITICAL DIRECTIVE: The recruiter has just concluded the call and said goodbye. "
+                "Respond with a brief, in-character farewell only (under 10 words). "
+                "Do NOT ask any questions or introduce new topics."
+            )
+            cand_farewell = await _call_llm(
+                _build_messages(farewell_sys, "CANDIDATE"),
+                temperature=0.35,
+                max_tokens=60,
+            )
             if cand_farewell and cand_farewell.strip():
                 dialogue.append({"speaker": "CANDIDATE", "text": cand_farewell.strip()})
             break
 
     return dialogue
+
 
 
 async def evaluate_digital_twin_run(
@@ -372,8 +425,34 @@ async def evaluate_digital_twin_run(
     persona: models.DigitalTwinPersona,
 ) -> dict[str, Any]:
     """Evaluate agent performance against the simulated persona and generate concrete prompt patches."""
-    formatted_transcript = "\n".join([f"{t['speaker']}: {t['text']}" for t in turns])
 
+    def _safe_int(value: Any, default: int) -> int:
+        """Safely convert a score value (int, float, or string) to int."""
+        if value is None:
+            return default
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return default
+
+    def _safe_list(value: Any, default: list) -> list:
+        """Return value if it's a non-empty list, else default."""
+        return value if isinstance(value, list) and len(value) > 0 else default
+
+    # Guard: if simulation produced no turns, return neutral defaults immediately
+    if not turns:
+        return {
+            "score_resilience": 50,
+            "score_clarity": 50,
+            "score_information_capture": 50,
+            "score_overall": 50,
+            "strengths": ["Simulation produced no dialogue to evaluate"],
+            "weaknesses": ["Simulation failed to produce any turns — check agent configuration"],
+            "ai_analysis": "No dialogue was produced. The simulation may have encountered an error or the agent prompt may be misconfigured.",
+            "prompt_recommendation": "Review agent prompt configuration and ensure the role has a valid call script.",
+        }
+
+    formatted_transcript = "\n".join([f"{t['speaker']}: {t['text']}" for t in turns])
     stage_title = stage.name if stage else "Round 1: Screening"
 
     eval_prompt = f"""You are a master AI Conversation Architect.
@@ -411,12 +490,13 @@ Respond with ONLY a JSON object with this exact structure:
 
     result = await chat_json_messages(messages, temperature=0.1)
     return {
-        "score_resilience": int(result.get("score_resilience") or 70),
-        "score_clarity": int(result.get("score_clarity") or 75),
-        "score_information_capture": int(result.get("score_information_capture") or 70),
-        "score_overall": int(result.get("score_overall") or 72),
-        "strengths": result.get("strengths") or ["Maintained professional tone"],
-        "weaknesses": result.get("weaknesses") or ["Could probe more firmly on ambiguous answers"],
+        "score_resilience": _safe_int(result.get("score_resilience"), 70),
+        "score_clarity": _safe_int(result.get("score_clarity"), 75),
+        "score_information_capture": _safe_int(result.get("score_information_capture"), 70),
+        "score_overall": _safe_int(result.get("score_overall"), 72),
+        "strengths": _safe_list(result.get("strengths"), ["Maintained professional tone"]),
+        "weaknesses": _safe_list(result.get("weaknesses"), ["Could probe more firmly on ambiguous answers"]),
         "ai_analysis": result.get("ai_analysis") or "Agent completed the dialogue but has room to improve resilience.",
         "prompt_recommendation": result.get("prompt_recommendation") or "Add a firm probing rule when candidate provides vague compensation or availability answers.",
     }
+
