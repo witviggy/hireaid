@@ -128,3 +128,45 @@ async def test_call_script(role_id: str, payload: schemas.TestCallRequest, db: S
     db.commit()
     db.refresh(call)
     return call
+
+
+# ── Global resync endpoint ───────────────────────────────────────────────────
+
+resync_router = APIRouter(prefix="/api/call-scripts", tags=["call-script"])
+
+
+@resync_router.post("/resync-all")
+async def resync_all_agents(db: Session = Depends(get_db)):
+    """Re-push the assembled agent prompt to Hunar for every role that has a linked Hunar agent.
+
+    Call this after any change to ADAPTIVE_CONVERSATION_PROTOCOL or assemble_agent_prompt()
+    so all active agents pick up the new prompt without needing to manually save each script.
+    """
+    scripts = (
+        db.query(models.CallScript)
+        .filter(models.CallScript.hunar_agent_id.isnot(None))
+        .all()
+    )
+    results = {"synced": [], "failed": []}
+    for script in scripts:
+        role = db.get(models.Role, script.role_id)
+        if not role:
+            continue
+        stage = (
+            db.query(models.RoleStage).filter(models.RoleStage.id == script.stage_id).first()
+            if script.stage_id else None
+        )
+        try:
+            agent_id = await sync_role_agent(role, script, stage=stage)
+            script.hunar_agent_id = agent_id
+            db.add(script)
+            results["synced"].append({"role": role.title, "agent_id": agent_id})
+        except HunarAPIError as exc:
+            results["failed"].append({"role": role.title, "error": exc.message})
+    db.commit()
+    return {
+        "total": len(scripts),
+        "synced": len(results["synced"]),
+        "failed": len(results["failed"]),
+        "details": results,
+    }

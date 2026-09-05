@@ -5,6 +5,7 @@ from sqlalchemy import text
 from .config import get_settings
 from .database import Base, engine
 from .routers import calls, call_scripts, candidates, dashboard, digital_twin, roles, settings as settings_router, stages, webhooks
+from .routers.call_scripts import resync_router
 from .scheduler import start_scheduler, stop_scheduler
 
 settings = get_settings()
@@ -24,6 +25,7 @@ app.include_router(roles.router)
 app.include_router(stages.router)
 app.include_router(candidates.router)
 app.include_router(call_scripts.router)
+app.include_router(resync_router)
 app.include_router(calls.router)
 app.include_router(digital_twin.router)
 app.include_router(dashboard.router)
