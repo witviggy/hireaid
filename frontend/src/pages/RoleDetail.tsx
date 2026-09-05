@@ -1080,9 +1080,11 @@ function PipelineSection({
                     ? stages[currentStageIndex + 1]
                     : null;
                 const isLastStage = nextStage === null;
-                const callAnswered = latestStageCall?.status === "COMPLETED";
+                // Prior stage-tagged calls can go missing (deleted/renumbered rounds); fall back to overall history.
+                const callAnswered = (latestStageCall || latestCall)?.status === "COMPLETED";
                 const passedRound = callAnswered && screening?.recommendation === "ADVANCE";
                 const lowScoreCompleted = callAnswered && Boolean(screening) && screening?.recommendation !== "ADVANCE";
+                const nextRoundNumber = currentStageIndex + 2;
 
                 const currentRound = rc.current_stage?.round_number || (currentStageIndex >= 0 ? currentStageIndex + 1 : 1);
                 const totalRounds = stages.length > 0 ? stages.length : 1;
@@ -1283,7 +1285,7 @@ function PipelineSection({
                                 <Archive className="mr-1 h-3.5 w-3.5" />
                                 <span>Archive (3/3 Limit)</span>
                               </Button>
-                            ) : !latestStageCall ? (
+                            ) : !latestCall ? (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -1321,14 +1323,14 @@ function PipelineSection({
                                   onClick={() => handleAdvance(rc.id, rc.candidate.full_name, nextStage.name)}
                                   disabled={actionInProgress || advancingRcId === rc.id}
                                   className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-2xs"
-                                  title={`Call ${rc.candidate.full_name} for Round ${nextStage.round_number}: ${nextStage.name} (transfers memory to next round)`}
+                                  title={`Call ${rc.candidate.full_name} for Round ${nextRoundNumber}: ${nextStage.name} (transfers memory to next round)`}
                                 >
                                   {advancingRcId === rc.id ? (
                                     <Spinner className="mr-1 h-3 w-3" />
                                   ) : (
                                     <PhoneCall className="mr-1 h-3.5 w-3.5" />
                                   )}
-                                  <span>Call (R{nextStage.round_number})</span>
+                                  <span>Call (R{nextRoundNumber})</span>
                                 </Button>
                               </>
                             ) : passedRound && isLastStage ? (
