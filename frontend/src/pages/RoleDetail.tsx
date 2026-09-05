@@ -10,7 +10,6 @@ import {
   ChevronDown,
   ChevronRight,
   FileText,
-  Headphones,
   Layers,
   ListChecks,
   MessageSquareText,
@@ -967,7 +966,7 @@ function PipelineSection({
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-slate-100 text-left text-[12px] font-medium text-[#6B7280] dark:border-[#27272A] dark:text-[#9CA3AF]">
-                <th className="w-10 pl-4 py-3 align-middle">
+                <th className="w-10 pl-4 py-3 align-middle text-left">
                   <input
                     type="checkbox"
                     checked={allSelected}
@@ -975,14 +974,14 @@ function PipelineSection({
                     className="rounded border-slate-300 dark:border-zinc-700"
                   />
                 </th>
-                <th className="px-4 py-3 font-medium align-middle">Candidate</th>
-                <th className="px-4 py-3 font-medium align-middle">Current Role</th>
+                <th className="px-4 py-3 font-medium align-middle text-left">Candidate</th>
+                <th className="px-4 py-3 font-medium align-middle text-left">Current Role</th>
                 <th className="px-4 py-3 font-medium text-center align-middle whitespace-nowrap">Round</th>
-                <th className="px-4 py-3 font-medium align-middle whitespace-nowrap">Status</th>
+                <th className="px-4 py-3 font-medium text-center align-middle whitespace-nowrap">Status</th>
                 <th className="px-4 py-3 font-medium text-center align-middle whitespace-nowrap">Fit Score</th>
-                <th className="px-4 py-3 font-medium align-middle whitespace-nowrap">Phone</th>
-                <th className="px-4 py-3 font-medium align-middle whitespace-nowrap">Call Status</th>
-                <th className="px-4 py-3 font-medium align-middle whitespace-nowrap">AI Screening</th>
+                <th className="px-4 py-3 font-medium align-middle text-left whitespace-nowrap">Phone</th>
+                <th className="px-4 py-3 font-medium align-middle text-left whitespace-nowrap">Call Status</th>
+                <th className="px-4 py-3 font-medium text-center align-middle whitespace-nowrap">AI Screening</th>
                 <th className="px-4 py-3 font-medium text-right align-middle whitespace-nowrap pr-4">Actions</th>
               </tr>
             </thead>
@@ -1065,7 +1064,7 @@ function PipelineSection({
                     </td>
 
                     {/* 5. Pipeline Stage — Interactive Dropdown */}
-                    <td className="px-4 py-3 align-middle whitespace-nowrap">
+                    <td className="px-4 py-3 text-center align-middle whitespace-nowrap">
                       <div className="relative inline-block">
                         <select
                           value={rc.status}
@@ -1111,7 +1110,7 @@ function PipelineSection({
                     </td>
 
                     {/* 7. Phone */}
-                    <td className="px-4 py-3 align-middle font-mono text-xs text-muted-foreground dark:text-slate-400 whitespace-nowrap">
+                    <td className="px-4 py-3 align-middle text-left font-mono text-xs text-muted-foreground dark:text-slate-400 whitespace-nowrap">
                       {hasPhone ? (
                         <span>{rc.candidate.phone_number}</span>
                       ) : (
@@ -1122,9 +1121,9 @@ function PipelineSection({
                     </td>
 
                     {/* 8. Call Status */}
-                    <td className="px-4 py-3 align-middle text-xs text-muted-foreground dark:text-slate-400 whitespace-nowrap">
+                    <td className="px-4 py-3 align-middle text-left text-xs text-muted-foreground dark:text-slate-400 whitespace-nowrap">
                       {latestCall ? (
-                        <div className="flex items-center gap-1.5">
+                        <div className="inline-flex items-center gap-1.5">
                           <span
                             className={cn(
                               "h-1.5 w-1.5 rounded-full shrink-0",
@@ -1138,20 +1137,6 @@ function PipelineSection({
                           <span className="font-medium text-slate-700 dark:text-slate-300">
                             {formatStatus(latestCall.status)}
                           </span>
-                          {formatDuration(latestCall.duration_seconds) ? (
-                            <span className="text-[11px] text-muted-foreground dark:text-slate-400">
-                              ({formatDuration(latestCall.duration_seconds)})
-                            </span>
-                          ) : null}
-                          {latestCall.status === "COMPLETED" && (
-                            <Link
-                              to={`/candidates/${rc.candidate_id}`}
-                              className="inline-flex items-center text-primary hover:text-primary/80 ml-0.5"
-                              title="Listen to audio & view transcript"
-                            >
-                              <Headphones className="h-3.5 w-3.5" />
-                            </Link>
-                          )}
                         </div>
                       ) : (
                         <span className="text-muted-foreground/60 dark:text-slate-500">—</span>
@@ -1159,7 +1144,7 @@ function PipelineSection({
                     </td>
 
                     {/* 9. AI Screening */}
-                    <td className="px-4 py-3 align-middle whitespace-nowrap">
+                    <td className="px-4 py-3 text-center align-middle whitespace-nowrap">
                       {screening ? (
                         <details className="group relative inline-block text-left">
                           <summary className="cursor-pointer list-none text-xs font-medium focus:outline-none select-none">
