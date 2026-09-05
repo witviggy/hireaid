@@ -369,7 +369,91 @@ def add_manual_candidate(role_id: str, payload: schemas.CandidateCreate, db: Ses
     db.add(rc)
     db.commit()
     db.refresh(rc)
+
+    # Immediately score new candidate against role's structured hiring criteria
+    criteria = _role_criteria(role)
+    criteria["min_years_experience"] = role.min_years_experience
+    criteria["title"] = role.title
+    try:
+        ranking_input = [{
+            "index": 0,
+            "full_name": candidate.full_name,
+            "job_title": candidate.current_title,
+            "company": candidate.current_company,
+            "location": candidate.location,
+            "notes": candidate.notes or "",
+        }]
+        rankings = await rank_candidates(criteria, ranking_input)
+        if 0 in rankings:
+            rc.fit_score = rankings[0]["match_score"]
+            rc.fit_strengths = rankings[0]["strengths"]
+            rc.fit_gaps = rankings[0]["gaps"]
+            rc.fit_summary = rankings[0]["summary"]
+            db.add(rc)
+            db.commit()
+            db.refresh(rc)
+    except Exception:
+        pass
+
     return rc
+
+
+@router.post("/{role_id}/rank", response_model=list[schemas.RoleCandidateOut])
+async def rank_role_candidates_endpoint(role_id: str, db: Session = Depends(get_db)):
+    """Evaluate and rank all candidates in this role's pipeline against the structured hiring criteria."""
+    role = db.get(models.Role, role_id)
+    if not role:
+        raise HTTPException(status_code=404, detail="Role not found")
+
+    role_candidates = (
+        db.query(models.RoleCandidate)
+        .options(
+            joinedload(models.RoleCandidate.candidate),
+            joinedload(models.RoleCandidate.calls),
+            joinedload(models.RoleCandidate.current_stage),
+        )
+        .filter(models.RoleCandidate.role_id == role.id)
+        .all()
+    )
+    if not role_candidates:
+        return []
+
+    criteria = _role_criteria(role)
+    criteria["min_years_experience"] = role.min_years_experience
+    criteria["title"] = role.title
+
+    ranking_input = [
+        {
+            "index": i,
+            "full_name": rc.candidate.full_name,
+            "job_title": rc.candidate.current_title,
+            "company": rc.candidate.current_company,
+            "location": rc.candidate.location,
+            "notes": rc.candidate.notes or "",
+        }
+        for i, rc in enumerate(role_candidates)
+    ]
+
+    try:
+        rankings = await rank_candidates(criteria, ranking_input)
+    except LLMError:
+        rankings = {}
+
+    for i, rc in enumerate(role_candidates):
+        r = rankings.get(i)
+        if not r:
+            continue
+        rc.fit_score = r["match_score"]
+        rc.fit_strengths = r["strengths"]
+        rc.fit_gaps = r["gaps"]
+        rc.fit_summary = r["summary"]
+
+    db.commit()
+    for rc in role_candidates:
+        db.refresh(rc)
+
+    role_candidates.sort(key=lambda rc: (rc.fit_score if rc.fit_score is not None else -1), reverse=True)
+    return role_candidates
 
 
 @router.post("/{role_id}/pipeline/queue", response_model=list[schemas.CallOut])

@@ -39,9 +39,17 @@ async def analyze_job_description(
     }
 
 
-RANKING_SYSTEM_PROMPT = """You are a technical recruiting assistant scoring sourced candidates \
-against a job's hiring criteria. For EACH candidate in the input list, produce a match score \
-from 0-100 and short evidence, based only on the fields given (do not invent experience).
+RANKING_SYSTEM_PROMPT = """You are an expert technical recruiting evaluation assistant.
+You are provided structured hiring criteria extracted from a job description (must-have skills, preferred skills, seniority, experience requirements) followed by candidate profiles.
+Evaluate each candidate strictly against the structured criteria:
+1. match_score: An integer from 0 to 100 based on verified skill alignment, seniority, and technical background.
+   - 85-100: Exceptional match across core skills and seniority
+   - 70-84: Strong fit with minor gaps
+   - 50-69: Moderate fit with some missing requirements
+   - 0-49: Low fit or mismatched domain
+2. strengths: 2-3 specific, evidence-backed bullets explaining what matches the criteria.
+3. gaps: 1-2 constructive bullets highlighting any missing skills or experience gaps.
+4. summary: A concise 1-sentence verdict on candidate alignment.
 
 Respond with ONLY a JSON object of this exact shape:
 {
@@ -49,40 +57,42 @@ Respond with ONLY a JSON object of this exact shape:
     {
       "index": <candidate index from input, integer>,
       "match_score": <integer 0-100>,
-      "strengths": ["short evidence bullet", "..."],
-      "gaps": ["short evidence bullet", "..."],
+      "strengths": ["...", "..."],
+      "gaps": ["..."],
       "summary": "<one sentence verdict>"
     }
   ]
 }
-Score conservatively: if a candidate's title/company/location data doesn't clearly show a \
-skill or seniority match, treat it as a gap rather than assuming it. Order does not matter; \
-include exactly one result per input candidate index."""
+Score fairly and accurately based on the candidate's actual experience and notes."""
 
 
 async def rank_candidates(
     job_criteria: dict[str, Any], candidates: list[dict[str, Any]]
 ) -> dict[int, dict[str, Any]]:
-    """candidates: list of {index, full_name, job_title, company, location, raw_data-derived facts}."""
+    """candidates: list of {index, full_name, job_title, company, location, notes}."""
     if not candidates:
         return {}
 
     criteria_text = (
+        f"Role: {job_criteria.get('title') or 'Job Opening'}\n"
+        f"Target Seniority: {job_criteria.get('seniority') or 'Unknown'}\n"
+        f"Minimum Experience Required: {job_criteria.get('min_years_experience') or 'Flexible'} years\n"
         f"Must-have skills: {', '.join(job_criteria.get('must_have_skills') or []) or 'none specified'}\n"
         f"Preferred skills: {', '.join(job_criteria.get('preferred_skills') or []) or 'none specified'}\n"
-        f"Seniority: {job_criteria.get('seniority') or 'Unknown'}\n"
-        f"Location: {job_criteria.get('location_normalized') or 'not specified'}\n"
-        f"Ideal candidate summary: {job_criteria.get('summary') or 'n/a'}"
+        f"Location / Remote: {job_criteria.get('location_normalized') or 'not specified'}\n"
+        f"Role Summary: {job_criteria.get('summary') or job_criteria.get('ai_summary') or 'n/a'}"
     )
-    candidates_text = "\n".join(
-        f"[{c['index']}] name={c.get('full_name')!r} title={c.get('job_title')!r} "
-        f"company={c.get('company')!r} location={c.get('location')!r}"
+    candidates_text = "\n\n".join(
+        f"[{c['index']}] Name: {c.get('full_name')}\n"
+        f"Current Title: {c.get('job_title') or 'Not specified'} at {c.get('company') or 'Not specified'}\n"
+        f"Location: {c.get('location') or 'Not specified'}\n"
+        f"Experience & Technical Notes: {c.get('notes') or 'None'}"
         for c in candidates
     )
-    user_prompt = f"Hiring criteria:\n{criteria_text}\n\nCandidates:\n{candidates_text}"
+    user_prompt = f"Structured Hiring Criteria:\n{criteria_text}\n\nCandidate Profiles:\n{candidates_text}"
 
     try:
-        result = await chat_json(RANKING_SYSTEM_PROMPT, user_prompt)
+        result = await chat_json(RANKING_SYSTEM_PROMPT, user_prompt, max_tokens=4096)
     except LLMError:
         return {}
 

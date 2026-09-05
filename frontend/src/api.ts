@@ -79,6 +79,8 @@ export const api = {
       body: JSON.stringify({ limit, provider }),
     }),
   getPipeline: (roleId: string) => request<RoleCandidate[]>(`/api/roles/${roleId}/pipeline`),
+  rankRoleCandidates: (roleId: string) =>
+    request<RoleCandidate[]>(`/api/roles/${roleId}/rank`, { method: "POST" }),
   addManualCandidate: (roleId: string, payload: ManualCandidateInput) =>
     request<RoleCandidate>(`/api/roles/${roleId}/candidates`, {
       method: "POST",

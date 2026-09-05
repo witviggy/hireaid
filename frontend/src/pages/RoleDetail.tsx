@@ -22,6 +22,7 @@ import {
   RotateCcw,
   Save,
   Search as SearchIcon,
+  Sparkles,
   Star,
   Trash2,
   UserPlus,
@@ -687,6 +688,20 @@ function PipelineSection({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [actionInProgress, setActionInProgress] = useState(false);
   const [advancingRcId, setAdvancingRcId] = useState<string | null>(null);
+  const [ranking, setRanking] = useState(false);
+
+  async function handleRankCandidates() {
+    setError(null);
+    setRanking(true);
+    try {
+      await api.rankRoleCandidates(roleId);
+      onDone();
+    } catch (e: any) {
+      setError(e.message || String(e));
+    } finally {
+      setRanking(false);
+    }
+  }
 
   const displayedPipeline = pipeline.filter((rc) => {
     if (activeTab === "archived" && rc.status !== "ARCHIVED") return false;
@@ -814,6 +829,24 @@ function PipelineSection({
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 {displayedPipeline.length}
               </span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleRankCandidates}
+                disabled={ranking || pipeline.length === 0}
+                className="h-7 text-xs font-semibold border-purple-200 bg-purple-50/70 hover:bg-purple-100 text-purple-900 dark:border-purple-800 dark:bg-purple-950/40 dark:text-purple-200 ml-1.5"
+                title="Score and rank all candidates against this role's structured hiring criteria using AI"
+              >
+                {ranking ? (
+                  <>
+                    <Spinner className="mr-1.5 h-3 w-3" /> AI Ranking...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-1.5 h-3 w-3 text-purple-600 dark:text-purple-400" /> AI Rank Pipeline
+                  </>
+                )}
+              </Button>
             </div>
             <div className="flex items-center gap-1 rounded-lg bg-muted p-1 text-xs">
               <button
