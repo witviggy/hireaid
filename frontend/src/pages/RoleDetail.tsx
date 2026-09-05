@@ -1097,7 +1097,7 @@ function PipelineSection({
                             <summary className="cursor-pointer list-none text-[10px] font-medium text-primary hover:underline focus:outline-none select-none">
                               Why?
                             </summary>
-                            <div className="absolute left-1/2 -translate-x-1/2 z-20 mt-1 w-56 space-y-1 rounded-md border border-slate-200 bg-white dark:border-[#27272A] dark:bg-[#18181B] p-2.5 shadow-md text-left text-[11px]">
+                            <div className="absolute left-1/2 -translate-x-1/2 z-50 mt-1 w-56 space-y-1 rounded-md border border-slate-200 bg-white dark:border-[#27272A] dark:bg-[#18181B] p-2.5 shadow-lg text-left text-[11px] whitespace-normal break-words">
                               {(rc.fit_strengths || []).map((s, i) => (
                                 <div key={`s-${i}`} className="text-emerald-700 dark:text-emerald-400">✓ {s}</div>
                               ))}
@@ -1161,7 +1161,7 @@ function PipelineSection({
                     {/* 9. AI Screening */}
                     <td className="px-4 py-3 align-middle whitespace-nowrap">
                       {screening ? (
-                        <details className="group relative inline-block">
+                        <details className="group relative inline-block text-left">
                           <summary className="cursor-pointer list-none text-xs font-medium focus:outline-none select-none">
                             <Badge
                               variant={
@@ -1172,17 +1172,21 @@ function PipelineSection({
                                   : "secondary"
                               }
                               className="cursor-pointer hover:opacity-90 transition-opacity"
+                              title={screening.ai_summary || undefined}
                             >
-                              {screening.recommendation} · {screening.score_overall}/100
+                              {screening.recommendation}
                             </Badge>
                           </summary>
-                          <div className="absolute right-0 z-20 mt-1.5 w-72 rounded-lg border border-slate-200 bg-white dark:border-[#27272A] dark:bg-[#18181B] p-3 shadow-lg text-xs space-y-1 text-slate-700 dark:text-slate-300">
-                            <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center justify-between">
-                              <span>AI Screening Summary</span>
-                              <span className="text-[10px] text-muted-foreground">Overall {screening.score_overall}/100</span>
+                          {screening.ai_summary && (
+                            <div className="absolute right-0 z-50 mt-1.5 w-80 max-w-sm rounded-lg border border-slate-200 bg-white dark:border-[#27272A] dark:bg-[#18181B] p-3 shadow-xl text-xs space-y-1 text-slate-700 dark:text-slate-300 whitespace-normal break-words">
+                              <div className="font-semibold text-slate-900 dark:text-slate-100">
+                                AI Screening Summary
+                              </div>
+                              <p className="text-[11px] leading-relaxed text-muted-foreground dark:text-slate-400 whitespace-normal break-words">
+                                {screening.ai_summary}
+                              </p>
                             </div>
-                            <p className="text-[11px] leading-relaxed text-muted-foreground dark:text-slate-400">{screening.ai_summary}</p>
-                          </div>
+                          )}
                         </details>
                       ) : (
                         <span className="text-muted-foreground/60 dark:text-slate-500">—</span>
