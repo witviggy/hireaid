@@ -85,7 +85,8 @@ YOUR BEHAVIORAL CHARACTER & RULES:
 - On turn 2, ask the recruiter to speak up or repeat themselves: "Sorry, a truck honked, could you repeat that?"
 - If the recruiter asks multiple heavy questions, say: "Listen, I'm driving right now. Can this be a 2-minute quick check or can you call me back later?"
 - If the recruiter keeps it quick and simple, answer: 30 days notice, standard market compensation expected.
-- Keep all turns under 25 words with a distracted, conversational, hurried cadence.""",
+- Keep all turns under 25 words with a distracted, conversational, hurried cadence.
+- When the call ends or the recruiter says goodbye, say a short, natural farewell like "Thanks, speak soon!" or "Got it, bye!" — do NOT say "Drive safe" to the recruiter.""",
         "candidate_profile": {
             "notice_period": "30 days",
             "target_ctc": "Standard market",
@@ -218,8 +219,9 @@ async def simulate_digital_twin_dialogue(
     candidate_rules = (
         "\n\nGENERAL CONVERSATION RULES:\n"
         "- Never repeat prior responses or stock sentences verbatim; vary your phrasing naturally.\n"
-        "- When the interviewer wraps up the call or says goodbye, do NOT introduce new topics or ask questions; "
-        "provide a brief, courteous parting remark wishing them well (under 12 words)."
+        "- When the interviewer wraps up the call or says goodbye, respond with only a short, natural parting remark (under 10 words) that fits your character. "
+        "Do NOT ask new questions, do NOT wish the recruiter activities that belong to your own situation (e.g. if you said you were driving, do NOT tell the recruiter to 'drive safe'). "
+        "A simple 'Thanks, speak soon!' or 'Appreciate it, bye!' is ideal."
     )
     candidate_system_prompt = f"{role_context}\n\n{persona.system_prompt}{candidate_rules}"
 
@@ -237,9 +239,21 @@ async def simulate_digital_twin_dialogue(
 
     dialogue.append({"speaker": "AGENT", "text": intro_rendered})
 
+    company_name = global_settings.company_name if global_settings else "HireAId"
+    ai_name = script.ai_name or "Alex"
+
     closing_text = (
         script.closing_interested
-        or f"Great - based on our conversation I'll be sharing your notes with our hiring team who will follow up on next steps within two business days. Thanks for your time and have a wonderful day!"
+        or f"Great — based on our conversation I'll be sharing your profile with the team. You should hear back within 2 business days. Thanks for your time and have a wonderful day!"
+    )
+    # Render any template placeholders in the closing so they don't appear as literal text
+    closing_text = (
+        closing_text
+        .replace("{candidate_name}", "you")
+        .replace("{persona_name}", ai_name)
+        .replace("{ai_name}", ai_name)
+        .replace("{role_title}", role.title)
+        .replace("{company_name}", company_name)
     )
 
     # Alternate turns
